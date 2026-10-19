@@ -2,6 +2,7 @@ plugins {
     id 'com.android.application'
     id 'com.chaquo.python'
 }
+
 android {
     namespace 'com.example.mikrotikbrowser'
     compileSdk 34
@@ -21,14 +22,16 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+
 chaquopy {
     defaultConfig {
-        version = "3.11"
+        buildPython("/opt/hostedtoolcache/Python/3.11.17/x64/bin/python3")
         pip {
             install("-r", "requirements.txt")
         }
     }
 }
+
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.webkit:webkit:1.12.1'
