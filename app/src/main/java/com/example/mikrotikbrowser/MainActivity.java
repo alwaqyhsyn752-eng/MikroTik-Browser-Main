@@ -23,6 +23,7 @@ public class MainActivity extends AppCompatActivity {
         webView = findViewById(R.id.webView);
         urlBar = findViewById(R.id.urlBar);
         progressBar = findViewById(R.id.progressBar);
+        webView.setBackgroundColor(0xFF000000);
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
