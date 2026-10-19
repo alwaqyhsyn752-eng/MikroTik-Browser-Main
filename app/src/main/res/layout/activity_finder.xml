@@ -5,29 +5,64 @@
 
     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:text="🔍 باحث الكروت" android:textColor="#0F0" android:textSize="18sp"
-        android:textStyle="bold" android:layout_marginBottom="6dp"/>
+        android:textStyle="bold" android:layout_marginBottom="4dp"/>
 
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="املأ الحقول حسب بيانات شبكتك" android:textColor="#FF0"
+        android:textSize="11sp" android:layout_marginBottom="8dp"/>
+
+    <!-- رابط صفحة الدخول -->
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="رابط صفحة الدخول:" android:textColor="#FFF"
+        android:textSize="12sp" android:layout_marginBottom="2dp"/>
     <EditText android:id="@+id/etUrl" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:hint="URL" android:textColor="#FFF" android:textColorHint="#888" android:textSize="12sp"
-        android:background="#333" android:padding="6dp" android:layout_marginBottom="4dp"/>
+        android:hint="مثال: http://192.168.88.1/login أو http://t.net/login"
+        android:textColor="#FFF" android:textColorHint="#666" android:textSize="12sp"
+        android:background="#333" android:padding="8dp" android:layout_marginBottom="8dp"
+        android:inputType="textUri"/>
 
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
-        <EditText android:id="@+id/etPrefix" android:layout_width="0dp" android:layout_height="wrap_content"
-            android:layout_weight="1" android:hint="Prefix" android:textColor="#FFF" android:textColorHint="#888"
-            android:textSize="12sp" android:background="#333" android:padding="6dp" android:layout_marginEnd="4dp"/>
-        <EditText android:id="@+id/etSuffix" android:layout_width="0dp" android:layout_height="wrap_content"
-            android:layout_weight="1" android:hint="Suffix" android:textColor="#FFF" android:textColorHint="#888"
-            android:textSize="12sp" android:background="#333" android:padding="6dp" android:layout_marginEnd="4dp"/>
-        <EditText android:id="@+id/etDigits" android:layout_width="0dp" android:layout_height="wrap_content"
-            android:layout_weight="1" android:hint="Digits" android:inputType="number" android:textColor="#FFF"
-            android:textColorHint="#888" android:textSize="12sp" android:background="#333" android:padding="6dp" android:layout_marginEnd="4dp"/>
-        <EditText android:id="@+id/etAttempts" android:layout_width="0dp" android:layout_height="wrap_content"
-            android:layout_weight="1" android:hint="Try" android:inputType="number" android:textColor="#FFF"
-            android:textColorHint="#888" android:textSize="12sp" android:background="#333" android:padding="6dp"/>
-    </LinearLayout>
+    <!-- Prefix -->
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="البادئة (Prefix) — بداية كل كرت:" android:textColor="#FFF"
+        android:textSize="12sp" android:layout_marginBottom="2dp"/>
+    <EditText android:id="@+id/etPrefix" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:hint="مثال: 42091 (الأرقام الثابتة في بداية الكرت)"
+        android:textColor="#FFF" android:textColorHint="#666" android:textSize="12sp"
+        android:background="#333" android:padding="8dp" android:layout_marginBottom="8dp"
+        android:inputType="number"/>
+
+    <!-- Suffix -->
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="اللاحقة (Suffix) — نهاية كل كرت:" android:textColor="#FFF"
+        android:textSize="12sp" android:layout_marginBottom="2dp"/>
+    <EditText android:id="@+id/etSuffix" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:hint="مثال: 3 (الأرقام الثابتة في نهاية الكرت — اتركه فارغاً إن لم يوجد)"
+        android:textColor="#FFF" android:textColorHint="#666" android:textSize="12sp"
+        android:background="#333" android:padding="8dp" android:layout_marginBottom="8dp"
+        android:inputType="number"/>
+
+    <!-- Digits -->
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="عدد الأرقام المتغيرة (Digits) — الجزء الذي نخمنه:" android:textColor="#FFF"
+        android:textSize="12sp" android:layout_marginBottom="2dp"/>
+    <EditText android:id="@+id/etDigits" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:hint="مثال: 2 (إن كان الكرت 42091XX3 فالمتغير رقمين)"
+        android:textColor="#FFF" android:textColorHint="#666" android:textSize="12sp"
+        android:background="#333" android:padding="8dp" android:layout_marginBottom="8dp"
+        android:inputType="number"/>
+
+    <!-- Attempts -->
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="عدد المحاولات (Attempts):" android:textColor="#FFF"
+        android:textSize="12sp" android:layout_marginBottom="2dp"/>
+    <EditText android:id="@+id/etAttempts" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:hint="مثال: 100 (كل محاولة = كرت واحد)"
+        android:textColor="#FFF" android:textColorHint="#666" android:textSize="12sp"
+        android:background="#333" android:padding="8dp" android:layout_marginBottom="8dp"
+        android:inputType="number"/>
 
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:layout_marginTop="6dp" android:layout_marginBottom="6dp">
+        android:orientation="horizontal" android:layout_marginBottom="8dp">
         <Button android:id="@+id/btnStart" android:layout_width="0dp" android:layout_height="wrap_content"
             android:layout_weight="1" android:text="▶ ابدأ"/>
         <Button android:id="@+id/btnStop" android:layout_width="0dp" android:layout_height="wrap_content"
@@ -39,7 +74,6 @@
         android:background="#000" android:padding="6dp" android:textSize="10sp"
         android:fontFamily="monospace" android:scrollbars="vertical"/>
 
-    <!-- WebView مخفي ينفذ التخمين بنفس جلسة المتصفح -->
     <WebView android:id="@+id/hiddenWeb" android:layout_width="1dp" android:layout_height="1dp"
         android:visibility="invisible"/>
 </LinearLayout>

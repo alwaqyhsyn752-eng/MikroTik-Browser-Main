@@ -36,11 +36,12 @@ public class FinderActivity extends AppCompatActivity {
         hiddenWeb = findViewById(R.id.hiddenWeb);
         tvLog.setMovementMethod(new ScrollingMovementMethod());
 
-        etUrl.setText("http://t.net/login");
-        etPrefix.setText("42091");
-        etSuffix.setText("3");
-        etDigits.setText("2");
-        etAttempts.setText("100");
+        String passedUrl = getIntent().getStringExtra("current_url");
+etUrl.setText(passedUrl != null && !passedUrl.isEmpty() ? passedUrl : "http://t.net/login");
+        etPrefix.setText("");
+        etSuffix.setText("");
+        etDigits.setText("");
+        etAttempts.setText("");
         btnStop.setEnabled(false);
 
         try {
