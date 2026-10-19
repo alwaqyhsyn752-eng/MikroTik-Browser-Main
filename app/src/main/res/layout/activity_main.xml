@@ -1,13 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent">
-    <WebView android:id="@+id/webview"
-        android:layout_width="0dp" android:layout_height="0dp"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
-</androidx.constraintlayout.widget.ConstraintLayout>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:padding="4dp" android:background="#222">
+        <EditText android:id="@+id/urlBar" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:hint="https://..." android:inputType="textUri"
+            android:textColor="#FFF" android:textColorHint="#999" android:textSize="13sp"
+            android:background="#333" android:padding="8dp" android:layout_marginEnd="4dp"/>
+        <Button android:id="@+id/btnGo" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="اذهب" android:textSize="12sp" android:minWidth="60dp"/>
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:background="#333">
+        <Button android:id="@+id/btnBack" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:text="◀" android:textSize="16sp"/>
+        <Button android:id="@+id/btnForward" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:text="▶" android:textSize="16sp"/>
+        <Button android:id="@+id/btnRefresh" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:text="⟳" android:textSize="16sp"/>
+        <Button android:id="@+id/btnFinder" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="2" android:text="🔍 التخمين" android:textSize="12sp"/>
+    </LinearLayout>
+    <ProgressBar android:id="@+id/progressBar" style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent" android:layout_height="3dp" android:max="100"/>
+    <WebView android:id="@+id/webView" android:layout_width="match_parent"
+        android:layout_height="0dp" android:layout_weight="1"/>
+</LinearLayout>
