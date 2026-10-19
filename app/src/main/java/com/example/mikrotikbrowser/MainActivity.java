@@ -8,8 +8,6 @@ import android.webkit.*;
 import android.widget.EditText;
 import android.widget.ProgressBar;
 import androidx.appcompat.app.AppCompatActivity;
-import com.chaquo.python.Python;
-import com.chaquo.python.android.AndroidPlatform;
 
 public class MainActivity extends AppCompatActivity {
     private WebView webView;
@@ -22,11 +20,12 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        if (!Python.isStarted()) Python.start(new AndroidPlatform(this));
-
         webView = findViewById(R.id.webView);
         urlBar = findViewById(R.id.urlBar);
         progressBar = findViewById(R.id.progressBar);
+
+        CookieManager.getInstance().setAcceptCookie(true);
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);
@@ -35,20 +34,12 @@ public class MainActivity extends AppCompatActivity {
         s.setAllowFileAccess(true);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
-        s.setJavaScriptCanOpenWindowsAutomatically(true);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
 
         webView.setWebViewClient(new WebViewClient() {
             @Override public void onPageFinished(WebView v, String u) {
-                urlBar.setText(u); progressBar.setVisibility(View.GONE);
-            }
-            @Override public void onReceivedError(WebView v, WebResourceRequest req, WebResourceError err) {
-                if (req.isForMainFrame()) {
-                    String html = "<html><body style='text-align:center;padding:40px;font-family:sans-serif;direction:rtl;'>"
-                        + "<h2>تعذر تحميل الصفحة</h2><p>" + err.getDescription() + "</p>"
-                        + "<p>أدخل رابطاً آخر أعلاه أو تأكد من اتصالك.</p></body></html>";
-                    v.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
-                }
+                urlBar.setText(u);
+                progressBar.setVisibility(View.GONE);
             }
         });
         webView.setWebChromeClient(new WebChromeClient() {
@@ -67,9 +58,22 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btnBack).setOnClickListener(v -> { if (webView.canGoBack()) webView.goBack(); });
         findViewById(R.id.btnForward).setOnClickListener(v -> { if (webView.canGoForward()) webView.goForward(); });
         findViewById(R.id.btnRefresh).setOnClickListener(v -> webView.reload());
-        findViewById(R.id.btnFinder).setOnClickListener(v -> startActivity(new Intent(this, FinderActivity.class)));
+        findViewById(R.id.btnFinder).setOnClickListener(v -> {
+            // تمرير الرابط الحالي إلى صفحة التخمين
+            Intent intent = new Intent(this, FinderActivity.class);
+            intent.putExtra("current_url", webView.getUrl());
+            startActivity(intent);
+        });
 
         webView.loadUrl(DETECT_URL);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        // عند العودة من التخمين، أعد تحميل الصفحة لتظهر الجلسة الجديدة
+        if (webView != null && webView.getUrl() != null) {
+            webView.reload();
+        }
     }
 
     @Override public void onBackPressed() {
