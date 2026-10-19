@@ -43,28 +43,28 @@ public class FinderActivity extends AppCompatActivity {
         btnStop.setEnabled(false);
 
         btnStart.setOnClickListener(v -> startFinding());
-        btnStop.setOnClickListener(v -> { running = false; appendLog("🛑 طلب إيقاف..."); });
+        btnStop.setOnClickListener(v -> { running = false; appendLog("طلب إيقاف..."); });
     }
 
     public void appendLog(String msg) {
-        uiHandler.post(() -> {
-            tvLog.append(msg + "\n");
-            int y = tvLog.getLayout() != null ? tvLog.getLayout().getLineTop(tvLog.getLineCount()) - tvLog.getHeight() : 0;
-            if (y > 0) tvLog.scrollTo(0, y);
-        });
+        uiHandler.post(() -> tvLog.append(msg + "\n"));
     }
 
     public boolean isCancelled() { return !running; }
 
     private void startFinding() {
         if (running) return;
-        String url = etUrl.getText().toString().trim();
-        String network = etNetwork.getText().toString().trim();
-        String prefix = etPrefix.getText().toString().trim();
-        String suffix = etSuffix.getText().toString().trim();
-        int digits, attempts;
-        try { digits = Integer.parseInt(etDigits.getText().toString().trim()); } catch (Exception e) { digits = 2; }
-        try { attempts = Integer.parseInt(etAttempts.getText().toString().trim()); } catch (Exception e) { attempts = 100; }
+
+        final String url = etUrl.getText().toString().trim();
+        final String network = etNetwork.getText().toString().trim();
+        final String prefix = etPrefix.getText().toString().trim();
+        final String suffix = etSuffix.getText().toString().trim();
+
+        int d, a;
+        try { d = Integer.parseInt(etDigits.getText().toString().trim()); } catch (Exception e) { d = 2; }
+        try { a = Integer.parseInt(etAttempts.getText().toString().trim()); } catch (Exception e) { a = 100; }
+        final int digits = d;
+        final int attempts = a;
 
         if (url.isEmpty() || prefix.isEmpty()) {
             Toast.makeText(this, "أدخل الرابط والبادئة", Toast.LENGTH_SHORT).show();
@@ -82,13 +82,13 @@ public class FinderActivity extends AppCompatActivity {
                 PyObject module = Python.getInstance().getModule("voucher_wrapper");
                 module.callAttr("run", url, network, prefix, suffix, digits, attempts, this);
             } catch (Exception e) {
-                appendLog("❌ " + e.getMessage());
+                appendLog("خطأ: " + e.getMessage());
             } finally {
                 uiHandler.post(() -> {
                     running = false;
                     btnStart.setEnabled(true);
                     btnStop.setEnabled(false);
-                    appendLog("⏹ انتهى التنفيذ");
+                    appendLog("انتهى التنفيذ");
                 });
             }
         });
