@@ -12,6 +12,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify Project Structure
+        run: |
+          echo "=== Root files ==="
+          ls -la
+          echo "=== app/ folder ==="
+          ls -la app/
+          echo "=== settings.gradle ==="
+          cat settings.gradle
+          echo "=== app/build.gradle exists? ==="
+          test -f app/build.gradle && echo "YES ✅" || echo "NO ❌"
+
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -26,16 +37,19 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: '8.7'
 
       - name: Generate Gradle Wrapper
-        run: gradle wrapper --gradle-version 8.9
+        run: gradle wrapper --gradle-version 8.7
 
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
+      - name: List Available Tasks
+        run: ./gradlew tasks --all 2>&1 | head -50 || true
+
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew :app:assembleDebug --stacktrace --info
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
