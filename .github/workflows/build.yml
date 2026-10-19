@@ -14,14 +14,14 @@ jobs:
 
       - name: Verify Project Structure
         run: |
-          echo "=== Root files ==="
+          echo "=== Root ==="
           ls -la
-          echo "=== app/ folder ==="
+          echo "=== app/ ==="
           ls -la app/
           echo "=== settings.gradle ==="
           cat settings.gradle
-          echo "=== app/build.gradle exists? ==="
-          test -f app/build.gradle && echo "YES ✅" || echo "NO ❌"
+          echo "=== app/build.gradle ==="
+          test -f app/build.gradle && echo "YES" || echo "NO"
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
@@ -46,7 +46,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: List Available Tasks
-        run: ./gradlew tasks --all 2>&1 | head -50 || true
+        run: ./gradlew tasks --all 2>&1 | head -80 || true
 
       - name: Build Debug APK
         run: ./gradlew :app:assembleDebug --stacktrace --info
