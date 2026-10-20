@@ -5,9 +5,10 @@
     <application
         android:allowBackup="true"
         android:label="MikroTik Browser"
-        android:theme="@style/Theme.AppCompat.NoActionBar"
+        android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="true">
-        <activity android:name=".MainActivity" android:exported="true"
+        <activity android:name=".MainActivity"
+            android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
