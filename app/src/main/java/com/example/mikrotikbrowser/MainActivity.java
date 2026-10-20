@@ -119,7 +119,6 @@ public class MainActivity extends Activity {
         if (!url.contains("/login")) url = url.replaceAll("/+$", "") + "/login";
 
         String prefix = etPrefix.getText().toString().trim();
-        if (prefix.isEmpty()) { Toast.makeText(this, "أدخل البادئة", Toast.LENGTH_SHORT).show(); return; }
         String suffix = etSuffix.getText().toString().trim();
         int digits = pi(etDigits, 2);
         int attempts = pi(etAttempts, 100);
