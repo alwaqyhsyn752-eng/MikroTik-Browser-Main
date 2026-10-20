@@ -5,6 +5,22 @@
     let stopped = false;
     window.stopFinder = function() { stopped = true; };
 
+    
+function updatePageInput(v) {
+    try {
+        var inputs = document.querySelectorAll('input[type="text"], input[type="tel"], input[name="username"]');
+        for (var i = 0; i < inputs.length; i++) {
+            var inp = inputs[i];
+            if (inp.id !== 'urlBar' && inp.name !== 'urlBar') {
+                inp.value = v;
+                inp.dispatchEvent(new Event('input', {bubbles:true}));
+                inp.dispatchEvent(new Event('change', {bubbles:true}));
+                break;
+            }
+        }
+    } catch(e) {}
+}
+
     function log(m) { try { window.AndroidBridge.log(m); } catch(e) {} }
     const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -135,6 +151,8 @@
                     log('🔍 ' + v);
                     
                     try { window.AndroidBridge.progress(done, CFG.attempts, v); } catch(e){}
+                    updatePageInput(v);
+                    log("🔍 " + v);
                     batch.push(post(v));
                 }
                 if (batch.length === 0) break;
