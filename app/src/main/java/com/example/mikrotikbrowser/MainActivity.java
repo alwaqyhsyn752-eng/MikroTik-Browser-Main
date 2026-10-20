@@ -1,84 +1,55 @@
 package com.example.mikrotikbrowser;
 
 import android.annotation.SuppressLint;
+import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.webkit.*;
 import android.widget.*;
-import androidx.appcompat.app.AppCompatActivity;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
-public class MainActivity extends AppCompatActivity {
-    private WebView webView, hiddenWeb;
+public class MainActivity extends Activity {
+    private WebView webView;
     private EditText urlBar;
     private ProgressBar progressBar;
-    private LinearLayout panelExpanded;
-    private TextView statusText, logText;
-    private Button btnTogglePanel, btnStart, btnStop;
-    private EditText etPrefix, etSuffix, etDigits, etAttempts;
-    private EditText etPause, etRetry, etStatusEvery, etRttEvery;
     private SharedPreferences prefs;
-    private String jsCode = "";
-    private boolean running = false;
-
-    private String currentFinderUrl, currentFinderPrefix, currentFinderSuffix, currentFinderNetwork;
-    private int currentFinderDigits, currentFinderAttempts, currentFinderPause, currentFinderRetry, currentFinderStatus, currentFinderRtt;
+    private String finderJs = "";
+    private TextView bridgeLog;
 
     @SuppressLint("SetJavaScriptEnabled")
-    @Override protected void onCreate(Bundle savedInstanceState) {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        prefs = getSharedPreferences("finder_prefs", MODE_PRIVATE);
+        prefs = getSharedPreferences("finder", MODE_PRIVATE);
 
-        webView = findViewById(R.id.webView);
-        urlBar = findViewById(R.id.urlBar);
-        progressBar = findViewById(R.id.progressBar);
-        panelExpanded = findViewById(R.id.panelExpanded);
-        statusText = findViewById(R.id.statusText);
-        logText = findViewById(R.id.logText);
-        btnTogglePanel = findViewById(R.id.btnTogglePanel);
-        btnStart = findViewById(R.id.btnStart);
-        btnStop = findViewById(R.id.btnStop);
-        etPrefix = findViewById(R.id.etPrefix);
-        etSuffix = findViewById(R.id.etSuffix);
-        etDigits = findViewById(R.id.etDigits);
-        etAttempts = findViewById(R.id.etAttempts);
-        etPause = findViewById(R.id.etPause);
-        etRetry = findViewById(R.id.etRetry);
-        etStatusEvery = findViewById(R.id.etStatusEvery);
-        etRttEvery = findViewById(R.id.etRttEvery);
-
-        // استرجاع الإعدادات المحفوظة
-        etPrefix.setText(prefs.getString("prefix", ""));
-        etSuffix.setText(prefs.getString("suffix", ""));
-        etDigits.setText(prefs.getString("digits", "2"));
-        etAttempts.setText(prefs.getString("attempts", "100"));
-        etPause.setText(prefs.getString("pause", "30"));
-        etRetry.setText(prefs.getString("retry", "1500"));
-        etStatusEvery.setText(prefs.getString("statusEvery", "30"));
-        etRttEvery.setText(prefs.getString("rttEvery", "8"));
-
-        // تحميل السكربت
         try {
             InputStream is = getAssets().open("finder.js");
             byte[] buf = new byte[is.available()];
             is.read(buf);
             is.close();
-            jsCode = new String(buf, StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            logText.setText("Error loading JS: " + e.getMessage());
-        }
+            finderJs = new String(buf, StandardCharsets.UTF_8);
+        } catch (Exception e) {}
 
-        // إعداد المتصفح الرئيسي
+        webView = findViewById(R.id.webView);
+        urlBar = findViewById(R.id.urlBar);
+        progressBar = findViewById(R.id.progressBar);
+
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        s.setAllowFileAccess(true);
+        s.setCacheMode(WebSettings.LOAD_DEFAULT);
         webView.setBackgroundColor(0xFF000000);
+        webView.addJavascriptInterface(new Bridge(), "AndroidBridge");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override public void onPageFinished(WebView v, String u) {
@@ -93,36 +64,6 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // إعداد المتصفح المخفي (للتخمين بدون Service)
-        hiddenWeb = new WebView(this);
-        WebSettings hs = hiddenWeb.getSettings();
-        hs.setJavaScriptEnabled(true);
-        hs.setDomStorageEnabled(true);
-        hs.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        hs.setAllowFileAccess(true);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(hiddenWeb, true);
-        hiddenWeb.addJavascriptInterface(new Bridge(), "AndroidBridge");
-
-        hiddenWeb.setWebViewClient(new WebViewClient() {
-            @Override public void onPageFinished(WebView view, String u) {
-                String cfg = "window.FINDER_CONFIG={"
-                    + "url:'" + currentFinderUrl + "',"
-                    + "prefix:'" + currentFinderPrefix + "',"
-                    + "suffix:'" + currentFinderSuffix + "',"
-                    + "digits:" + currentFinderDigits + ","
-                    + "attempts:" + currentFinderAttempts + ","
-                    + "network:'" + currentFinderNetwork + "',"
-                    + "tried:[],"
-                    + "pause:" + currentFinderPause + ","
-                    + "retryDelay:" + currentFinderRetry + ","
-                    + "statusEvery:" + currentFinderStatus + ","
-                    + "rttEvery:" + currentFinderRtt + "};";
-                view.evaluateJavascript(cfg, null);
-                view.evaluateJavascript(jsCode, null);
-            }
-        });
-
-        // ربط الأزرار
         findViewById(R.id.btnGo).setOnClickListener(v -> {
             String u = urlBar.getText().toString().trim();
             if (u.isEmpty()) return;
@@ -132,98 +73,106 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btnBack).setOnClickListener(v -> { if (webView.canGoBack()) webView.goBack(); });
         findViewById(R.id.btnForward).setOnClickListener(v -> { if (webView.canGoForward()) webView.goForward(); });
         findViewById(R.id.btnRefresh).setOnClickListener(v -> webView.reload());
-
-        // زر فتح/إغلاق اللوحة
-        btnTogglePanel.setOnClickListener(v -> {
-            if (panelExpanded.getVisibility() == View.VISIBLE) {
-                panelExpanded.setVisibility(View.GONE);
-            } else {
-                panelExpanded.setVisibility(View.VISIBLE);
-            }
-        });
-
-        btnStart.setOnClickListener(v -> startFinder());
-        btnStop.setOnClickListener(v -> stopFinder());
+        findViewById(R.id.btnFinder).setOnClickListener(v -> openFinder());
 
         webView.loadUrl("http://connectivitycheck.gstatic.com/generate_204");
     }
 
-    private void startFinder() {
-        String currentUrl = webView.getUrl();
-        if (currentUrl == null || currentUrl.contains("connectivitycheck") || !currentUrl.contains("/")) {
-            Toast.makeText(this, "افتح صفحة الدخول أولاً", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        currentFinderUrl = currentUrl;
-        if (!currentFinderUrl.contains("/login")) currentFinderUrl = currentFinderUrl.replaceAll("/+$", "") + "/login";
+    private void openFinder() {
+        View v = LayoutInflater.from(this).inflate(R.layout.dialog_finder, null);
+        EditText etPrefix = v.findViewById(R.id.etPrefix);
+        EditText etSuffix = v.findViewById(R.id.etSuffix);
+        EditText etDigits = v.findViewById(R.id.etDigits);
+        EditText etAttempts = v.findViewById(R.id.etAttempts);
+        EditText etPause = v.findViewById(R.id.etPause);
+        EditText etRetry = v.findViewById(R.id.etRetry);
+        EditText etStatusEvery = v.findViewById(R.id.etStatusEvery);
+        EditText etRttEvery = v.findViewById(R.id.etRttEvery);
+        TextView logText = v.findViewById(R.id.logText);
 
-        currentFinderPrefix = etPrefix.getText().toString().trim();
-        if (currentFinderPrefix.isEmpty()) { Toast.makeText(this, "أدخل البادئة", Toast.LENGTH_SHORT).show(); return; }
-        currentFinderSuffix = etSuffix.getText().toString().trim();
+        etPrefix.setText(prefs.getString("prefix", ""));
+        etSuffix.setText(prefs.getString("suffix", ""));
+        etDigits.setText(prefs.getString("digits", "2"));
+        etAttempts.setText(prefs.getString("attempts", "100"));
+        etPause.setText(prefs.getString("pause", "30"));
+        etRetry.setText(prefs.getString("retry", "1500"));
+        etStatusEvery.setText(prefs.getString("statusEvery", "30"));
+        etRttEvery.setText(prefs.getString("rttEvery", "8"));
 
-        try { currentFinderDigits = Integer.parseInt(etDigits.getText().toString()); } catch (Exception e) { currentFinderDigits = 2; }
-        try { currentFinderAttempts = Integer.parseInt(etAttempts.getText().toString()); } catch (Exception e) { currentFinderAttempts = 100; }
-        try { currentFinderPause = Integer.parseInt(etPause.getText().toString()); } catch (Exception e) { currentFinderPause = 30; }
-        try { currentFinderRetry = Integer.parseInt(etRetry.getText().toString()); } catch (Exception e) { currentFinderRetry = 1500; }
-        try { currentFinderStatus = Integer.parseInt(etStatusEvery.getText().toString()); } catch (Exception e) { currentFinderStatus = 30; }
-        try { currentFinderRtt = Integer.parseInt(etRttEvery.getText().toString()); } catch (Exception e) { currentFinderRtt = 8; }
+        bridgeLog = logText;
 
-        prefs.edit()
-            .putString("prefix", currentFinderPrefix)
-            .putString("suffix", currentFinderSuffix)
-            .putString("digits", String.valueOf(currentFinderDigits))
-            .putString("attempts", String.valueOf(currentFinderAttempts))
-            .putString("pause", String.valueOf(currentFinderPause))
-            .putString("retry", String.valueOf(currentFinderRetry))
-            .putString("statusEvery", String.valueOf(currentFinderStatus))
-            .putString("rttEvery", String.valueOf(currentFinderRtt))
-            .apply();
+        AlertDialog dlg = new AlertDialog.Builder(this)
+            .setView(v)
+            .setPositiveButton("▶ ابدأ", (d, w) -> {
+                String url = webView.getUrl();
+                if (url == null || !url.contains("/")) {
+                    Toast.makeText(this, "افتح صفحة الدخول أولاً", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                if (!url.contains("/login")) url = url.replaceAll("/+$", "") + "/login";
+                String prefix = etPrefix.getText().toString().trim();
+                if (prefix.isEmpty()) { Toast.makeText(this, "أدخل البادئة", Toast.LENGTH_SHORT).show(); return; }
+                String suffix = etSuffix.getText().toString().trim();
+                int digits = pi(etDigits, 2);
+                int attempts = pi(etAttempts, 100);
+                int pause = pi(etPause, 30);
+                int retry = pi(etRetry, 1500);
+                int statusEvery = pi(etStatusEvery, 30);
+                int rttEvery = pi(etRttEvery, 8);
 
-        try {
-            currentFinderNetwork = android.net.Uri.parse(currentFinderUrl).getHost();
-            if (currentFinderNetwork == null) currentFinderNetwork = "default";
-        } catch (Exception e) { currentFinderNetwork = "default"; }
+                prefs.edit()
+                    .putString("prefix", prefix).putString("suffix", suffix)
+                    .putString("digits", String.valueOf(digits))
+                    .putString("attempts", String.valueOf(attempts))
+                    .putString("pause", String.valueOf(pause))
+                    .putString("retry", String.valueOf(retry))
+                    .putString("statusEvery", String.valueOf(statusEvery))
+                    .putString("rttEvery", String.valueOf(rttEvery))
+                    .apply();
 
-        logText.setText("");
-        statusText.setText("جاري التخمين...");
-        btnStart.setEnabled(false);
-        btnStop.setEnabled(true);
-        running = true;
+                String cfg = "window.FINDER_CONFIG={"
+                    + "url:'" + url + "',"
+                    + "prefix:'" + prefix + "',"
+                    + "suffix:'" + suffix + "',"
+                    + "digits:" + digits + ","
+                    + "attempts:" + attempts + ","
+                    + "pause:" + pause + ","
+                    + "retryDelay:" + retry + ","
+                    + "statusEvery:" + statusEvery + ","
+                    + "rttEvery:" + rttEvery + "};";
+                webView.evaluateJavascript(cfg, null);
+                webView.evaluateJavascript(finderJs, null);
+            })
+            .setNeutralButton("⏹ إيقاف", (d, w) ->
+                webView.evaluateJavascript("window.stopFinder && window.stopFinder();", null))
+            .setNegativeButton("إغلاق", null)
+            .create();
 
-        hiddenWeb.loadUrl(currentFinderUrl);
+        dlg.setOnDismissListener(x -> bridgeLog = null);
+        dlg.show();
     }
 
-    private void stopFinder() {
-        if (!running) return;
-        running = false;
-        hiddenWeb.evaluateJavascript("window.stopFinder && window.stopFinder();", null);
-        statusText.setText("متوقف");
-        btnStart.setEnabled(true);
-        btnStop.setEnabled(false);
+    private int pi(EditText e, int def) {
+        try { return Integer.parseInt(e.getText().toString().trim()); }
+        catch (Exception ex) { return def; }
     }
 
     public class Bridge {
         @JavascriptInterface public void log(String m) {
             runOnUiThread(() -> {
-                logText.append(m + "\n");
-                int scrollAmount = logText.getLayout().getLineTop(logText.getLineCount()) - logText.getHeight();
-                if (scrollAmount > 0) logText.scrollTo(0, scrollAmount);
-                else logText.scrollTo(0, 0);
+                if (bridgeLog != null) {
+                    bridgeLog.append(m + "\n");
+                    int sc = bridgeLog.getLayout().getLineTop(bridgeLog.getLineCount()) - bridgeLog.getHeight();
+                    if (sc > 0) bridgeLog.scrollTo(0, sc);
+                }
             });
-        }
-        @JavascriptInterface public void progress(int c, int t, String v) {
-            runOnUiThread(() -> statusText.setText("[" + c + "/" + t + "] " + v));
         }
         @JavascriptInterface public void found(String v, String j) {
             runOnUiThread(() -> {
-                statusText.setText("✅ وجد: " + v);
-                Toast.makeText(MainActivity.this, "وجد الكرت: " + v, Toast.LENGTH_LONG).show();
-                stopFinder();
-                if (webView.getUrl() != null) webView.reload();
+                Toast.makeText(MainActivity.this, "✅ " + v, Toast.LENGTH_LONG).show();
+                webView.reload();
             });
         }
-        @JavascriptInterface public void markBad(String v) {}
-        @JavascriptInterface public void markErr(String v) {}
     }
 
     @Override public void onBackPressed() {
