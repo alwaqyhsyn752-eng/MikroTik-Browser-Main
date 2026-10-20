@@ -11,7 +11,6 @@
         android:orientation="horizontal"
         android:padding="4dp"
         android:background="#222222">
-
         <EditText
             android:id="@+id/urlBar"
             android:layout_width="0dp"
@@ -25,7 +24,6 @@
             android:background="#333333"
             android:padding="8dp"
             android:layout_marginEnd="4dp"/>
-
         <Button
             android:id="@+id/btnGo"
             android:layout_width="wrap_content"
@@ -33,7 +31,6 @@
             android:text="اذهب"
             android:textSize="12sp"
             android:minWidth="60dp"/>
-
     </LinearLayout>
 
     <LinearLayout
@@ -41,43 +38,15 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:background="#333333">
-
-        <Button
-            android:id="@+id/btnBack"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="◀"
-            android:textSize="16sp"/>
-
-        <Button
-            android:id="@+id/btnForward"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="▶"
-            android:textSize="16sp"/>
-
-        <Button
-            android:id="@+id/btnRefresh"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="⟳"
-            android:textSize="16sp"/>
-
-        <Button
-            android:id="@+id/btnFinder"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="2"
-            android:text="🔍 التخمين"
-            android:textSize="12sp"/>
-
+        <Button android:id="@+id/btnBack" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:text="◀" android:textSize="16sp"/>
+        <Button android:id="@+id/btnForward" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:text="▶" android:textSize="16sp"/>
+        <Button android:id="@+id/btnRefresh" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:text="⟳" android:textSize="16sp"/>
     </LinearLayout>
 
-    <ProgressBar
-        android:id="@+id/progressBar"
+    <ProgressBar android:id="@+id/progressBar"
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
         android:layout_height="3dp"
@@ -90,4 +59,126 @@
         android:layout_weight="1"
         android:background="#000000"/>
 
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="#1B5E20"
+        android:padding="4dp">
+        <Button android:id="@+id/btnTogglePanel" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="🔍" android:textSize="14sp"
+            android:minWidth="48dp"/>
+        <TextView android:id="@+id/statusText" android:layout_width="0dp"
+            android:layout_height="wrap_content" android:layout_weight="1"
+            android:textColor="#FFFFFF" android:textSize="12sp"
+            android:gravity="center_vertical" android:padding="8dp"
+            android:text="التخمين متوقف"/>
+        <Button android:id="@+id/btnStart" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="▶" android:textSize="14sp"
+            android:minWidth="48dp"/>
+        <Button android:id="@+id/btnStop" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="⏹" android:textSize="14sp"
+            android:minWidth="48dp"/>
+    </LinearLayout>
+
+    <ScrollView android:id="@+id/panelExpanded"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:maxHeight="400dp"
+        android:background="#0D0D0D"
+        android:visibility="gone">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:padding="8dp">
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="البادئة (Prefix)" android:textColor="#FFF" android:textSize="11sp"/>
+            <EditText android:id="@+id/etPrefix" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:hint="42091" android:textColor="#FFF"
+                android:textColorHint="#666" android:textSize="12sp" android:background="#333"
+                android:padding="6dp" android:layout_marginBottom="4dp" android:inputType="text"/>
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="اللاحقة (Suffix)" android:textColor="#FFF" android:textSize="11sp"/>
+            <EditText android:id="@+id/etSuffix" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:hint="3" android:textColor="#FFF"
+                android:textColorHint="#666" android:textSize="12sp" android:background="#333"
+                android:padding="6dp" android:layout_marginBottom="4dp" android:inputType="text"/>
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="عدد الأرقام" android:textColor="#FFF" android:textSize="11sp"/>
+                    <EditText android:id="@+id/etDigits" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:hint="2" android:textColor="#FFF"
+                        android:textColorHint="#666" android:textSize="12sp" android:background="#333"
+                        android:padding="6dp" android:inputType="text"/>
+                </LinearLayout>
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="4dp">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="المحاولات" android:textColor="#FFF" android:textSize="11sp"/>
+                    <EditText android:id="@+id/etAttempts" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:hint="100" android:textColor="#FFF"
+                        android:textColorHint="#666" android:textSize="12sp" android:background="#333"
+                        android:padding="6dp" android:inputType="text"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="⏱ الإعدادات الزمنية (ms)"
+                android:textColor="#FFEB3B" android:textSize="11sp"
+                android:textStyle="bold" android:layout_marginTop="6dp"/>
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="Batch Pause" android:textColor="#CCC" android:textSize="10sp"/>
+                    <EditText android:id="@+id/etPause" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:hint="30" android:textColor="#FFF"
+                        android:textColorHint="#666" android:textSize="11sp" android:background="#222"
+                        android:padding="4dp" android:inputType="text"/>
+                </LinearLayout>
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="4dp">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="Retry Delay" android:textColor="#CCC" android:textSize="10sp"/>
+                    <EditText android:id="@+id/etRetry" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:hint="1500" android:textColor="#FFF"
+                        android:textColorHint="#666" android:textSize="11sp" android:background="#222"
+                        android:padding="4dp" android:inputType="text"/>
+                </LinearLayout>
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="4dp">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="Status Every" android:textColor="#CCC" android:textSize="10sp"/>
+                    <EditText android:id="@+id/etStatusEvery" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:hint="30" android:textColor="#FFF"
+                        android:textColorHint="#666" android:textSize="11sp" android:background="#222"
+                        android:padding="4dp" android:inputType="text"/>
+                </LinearLayout>
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="4dp">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="RTT Refresh" android:textColor="#CCC" android:textSize="10sp"/>
+                    <EditText android:id="@+id/etRttEvery" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:hint="8" android:textColor="#FFF"
+                        android:textColorHint="#666" android:textSize="11sp" android:background="#222"
+                        android:padding="4dp" android:inputType="text"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="السجل:" android:textColor="#FFEB3B" android:textSize="11sp"
+                android:layout_marginTop="6dp"/>
+            <TextView android:id="@+id/logText" android:layout_width="match_parent"
+                android:layout_height="200dp" android:textColor="#0F0"
+                android:background="#000" android:padding="6dp"
+                android:textSize="10sp" android:fontFamily="monospace"
+                android:scrollbars="vertical"/>
+        </LinearLayout>
+    </ScrollView>
 </LinearLayout>
