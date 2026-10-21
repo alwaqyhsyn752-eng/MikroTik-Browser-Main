@@ -54,10 +54,10 @@ public class MainActivity extends Activity {
         etSuffix.setText(prefs.getString("suffix", ""));
         etDigits.setText(prefs.getString("digits", "2"));
         etAttempts.setText(prefs.getString("attempts", "100"));
-        etPause.setText(prefs.getString("pause", "30"));
-        etRetry.setText(prefs.getString("retry", "1500"));
-        etStatusEvery.setText(prefs.getString("statusEvery", "30"));
-        etRttEvery.setText(prefs.getString("rttEvery", "8"));
+        etPause.setText(prefs.getString("pause", "300"));
+        etRetry.setText(prefs.getString("retry", "1000"));
+        etStatusEvery.setText(prefs.getString("statusEvery", "50"));
+        etRttEvery.setText(prefs.getString("threads", "3"));
 
         try {
             InputStream is = getAssets().open("finder.js");
@@ -124,10 +124,10 @@ public class MainActivity extends Activity {
         String suffix = etSuffix.getText().toString().trim();
         int digits = pi(etDigits, 2);
         int attempts = pi(etAttempts, 100);
-        int pause = pi(etPause, 30);
-        int retry = pi(etRetry, 1500);
-        int statusEvery = pi(etStatusEvery, 30);
-        int rttEvery = pi(etRttEvery, 8);
+        int pause = pi(etPause, 300);
+        int retry = pi(etRetry, 1000);
+        int statusEvery = pi(etStatusEvery, 50);
+        int threads = pi(etRttEvery, 3);
 
         prefs.edit()
             .putString("prefix", prefix).putString("suffix", suffix)
@@ -136,7 +136,7 @@ public class MainActivity extends Activity {
             .putString("pause", String.valueOf(pause))
             .putString("retry", String.valueOf(retry))
             .putString("statusEvery", String.valueOf(statusEvery))
-            .putString("rttEvery", String.valueOf(rttEvery))
+            .putString("threads", String.valueOf(threads))
             .apply();
 
         logBuf.setLength(0);
@@ -153,7 +153,7 @@ public class MainActivity extends Activity {
             + "pause:" + pause + ","
             + "retryDelay:" + retry + ","
             + "statusEvery:" + statusEvery + ","
-            + "rttEvery:" + rttEvery + "};";
+            + "threads:" + threads + "};";
         webView.evaluateJavascript(cfg, null);
         webView.evaluateJavascript(finderJs, null);
     }

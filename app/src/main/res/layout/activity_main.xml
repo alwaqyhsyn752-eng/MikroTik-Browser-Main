@@ -107,9 +107,9 @@
                     <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
                         android:layout_weight="1" android:orientation="vertical">
                         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:text="Pause" android:textColor="#CCCCCC" android:textSize="9sp"/>
+                            android:text="التأخير" android:textColor="#CCCCCC" android:textSize="9sp"/>
                         <EditText android:id="@+id/etPause" android:layout_width="match_parent"
-                            android:layout_height="wrap_content" android:hint="30"
+                            android:layout_height="wrap_content" android:hint="300"
                             android:textColor="#FFFFFF" android:textColorHint="#666666"
                             android:textSize="11sp" android:background="#222222"
                             android:padding="3dp" android:inputType="text"/>
@@ -117,9 +117,9 @@
                     <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
                         android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="4dp">
                         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:text="Retry" android:textColor="#CCCCCC" android:textSize="9sp"/>
+                            android:text="الانتظار" android:textColor="#CCCCCC" android:textSize="9sp"/>
                         <EditText android:id="@+id/etRetry" android:layout_width="match_parent"
-                            android:layout_height="wrap_content" android:hint="1500"
+                            android:layout_height="wrap_content" android:hint="1000"
                             android:textColor="#FFFFFF" android:textColorHint="#666666"
                             android:textSize="11sp" android:background="#222222"
                             android:padding="3dp" android:inputType="text"/>
@@ -127,9 +127,9 @@
                     <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
                         android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="4dp">
                         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:text="StatusEvery" android:textColor="#CCCCCC" android:textSize="9sp"/>
+                            android:text="حجم الدفعة" android:textColor="#CCCCCC" android:textSize="9sp"/>
                         <EditText android:id="@+id/etStatusEvery" android:layout_width="match_parent"
-                            android:layout_height="wrap_content" android:hint="30"
+                            android:layout_height="wrap_content" android:hint="300"
                             android:textColor="#FFFFFF" android:textColorHint="#666666"
                             android:textSize="11sp" android:background="#222222"
                             android:padding="3dp" android:inputType="text"/>
