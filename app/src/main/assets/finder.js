@@ -85,12 +85,8 @@ function updatePageInput(v) {
                 return;
             }
 
-            log('→ قياس سرعة الشبكة (RTT)...');
-            const t0 = performance.now();
-            await fetch(statusUrl, { credentials: 'include', cache: 'no-cache' });
-            const rtt = performance.now() - t0;
-            let parallel = calcParallel(rtt);
-            log('  RTT = ' + Math.round(rtt) + 'ms → توازي = ' + parallel);
+            let parallel = CFG.rttEvery > 0 ? CFG.rttEvery : 5;
+            log('  السرعة (التوازي) = ' + parallel);
 
             let template = { username: '', password: '', dst: base + '/', popup: 'true' };
             try {
@@ -181,7 +177,7 @@ function updatePageInput(v) {
                     }
                 }
 
-                if (batchCount % 50 === 0) await sleep(CFG.pause);
+                if (CFG.pause > 0) await sleep(CFG.pause);
             }
             log('❌ انتهى');
         } catch(e) {
