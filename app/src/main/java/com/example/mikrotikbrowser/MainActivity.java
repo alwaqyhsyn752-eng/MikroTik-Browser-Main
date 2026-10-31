@@ -195,6 +195,7 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
     @Override public void onProgress(final int cur, final int total, final String v) {
         runOnUiThread(() -> {
             statusText.setText("[" + cur + "/" + total + "] " + v);
+            // تحديث خانة الإدخال في صفحة الويب
             String js = "(function(){" +
                 "var i=document.querySelectorAll('input');" +
                 "for(var k=0;k<i.length;k++){" +
