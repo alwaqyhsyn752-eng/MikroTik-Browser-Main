@@ -162,9 +162,7 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
         findViewById(R.id.btnStop).setEnabled(true);
 
         try {
-            engine = new CrackerEngine(
-                this, prefs, currentNetwork, url, prefix, suffix,
-                digits, attempts, threads, pause, retry);
+            engine = new CrackerEngine(this, prefs, currentNetwork, url, prefix, suffix, digits, attempts, threads, pause);
             engine.start();
         } catch (Exception e) {
             logBuf.append("❌ ").append(e.toString()).append("\n");
