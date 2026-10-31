@@ -25,7 +25,7 @@ public class CrackerEngine {
     private final AtomicBoolean stopped = new AtomicBoolean(false);
     private final AtomicBoolean found = new AtomicBoolean(false);
     private final AtomicInteger done = new AtomicInteger(0);
-    private final Set<String> tried = Collections.synchronizedSet(loadTried());
+    private final Set<String> tried;
     private final Random rng = new Random();
     private Map<String, String> formTemplate;
 
@@ -43,6 +43,7 @@ public class CrackerEngine {
         this.digits = digits; this.maxAttempts = maxAttempts; this.threads = threads;
         this.delayMin = Math.max(150, delayMin); this.delayMax = Math.max(this.delayMin + 100, delayMax);
         this.batchSize = batchSize; this.batchRest = batchRest; this.retryDelay = retryDelay;
+        this.tried = Collections.synchronizedSet(loadTried());
     }
 
     private Set<String> loadTried() {
