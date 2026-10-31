@@ -157,10 +157,17 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
         voucherResult.setVisibility(View.GONE);
         statusText.setText("جاري التخمين...");
 
-        engine = new CrackerEngine(
-            this, prefs, currentNetwork, url, prefix, suffix, digits, attempts,
-            threads, pause, pause * 2, statusEvery, 5000, retry);
-        engine.start();
+        try {
+            engine = new CrackerEngine(
+                this, prefs, currentNetwork, url, prefix, suffix, digits, attempts,
+                threads, pause, pause * 2, statusEvery, 5000, retry);
+            engine.start();
+        } catch (Exception e) {
+            logBuf.append("❌ فشل بدء المحرك: ").append(e.toString()).append("
+");
+            logText.setText(logBuf.toString());
+            Toast.makeText(this, "خطأ: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
     }
 
     private void stopCracker() {
