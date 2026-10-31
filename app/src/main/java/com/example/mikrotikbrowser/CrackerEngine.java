@@ -72,8 +72,8 @@ public class CrackerEngine {
             if (formTemplate == null) { log("❌ فشل استخراج الفورم"); return; }
             log("✓ الحقول: " + formTemplate.keySet());
 
-            // 2. Check current session (shared - just informational)
-            checkInitSession();
+            // 2. Check current session
+            if (checkInitSession()) return;
 
             // 3. Spawn workers, each with own session
             List<Thread> workers = new ArrayList<>();
@@ -259,7 +259,7 @@ public class CrackerEngine {
         int max = (int) Math.pow(10, digits) - 1;
         for (int k = 0; k < 500; k++) {
             int num = rng.nextInt(max + 1);
-            String v = prefix + String.format("%0" + digits + "d", num) + suffix;
+            String v = prefix + String.format(java.util.Locale.US, "%0" + digits + "d", num) + suffix;
             if (tried.add(v)) {
                 synchronized (prefs) {
                     Set<String> s = new HashSet<>(prefs.getStringSet("tried_" + network, new HashSet<>()));

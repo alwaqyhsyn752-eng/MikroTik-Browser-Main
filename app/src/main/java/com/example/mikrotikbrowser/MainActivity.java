@@ -193,7 +193,21 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
     }
 
     @Override public void onProgress(final int cur, final int total, final String v) {
-        runOnUiThread(() -> statusText.setText("[" + cur + "/" + total + "] " + v));
+        runOnUiThread(() -> {
+            statusText.setText("[" + cur + "/" + total + "] " + v);
+            String js = "(function(){" +
+                "var i=document.querySelectorAll('input');" +
+                "for(var k=0;k<i.length;k++){" +
+                "var x=i[k];" +
+                "if(x.type==='text'||x.name==='username'||x.id.indexOf('username')>=0||x.id.indexOf('voucher')>=0){" +
+                "x.value='"+v+"';" +
+                "x.dispatchEvent(new Event('input',{bubbles:true}));" +
+                "break;" +
+                "}" +
+                "}" +
+                "})()";
+            webView.evaluateJavascript(js, null);
+        });
     }
 
     @Override public void onFound(final String voucher, final String statusJson) {
