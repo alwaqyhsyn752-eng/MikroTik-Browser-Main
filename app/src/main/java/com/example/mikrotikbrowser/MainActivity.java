@@ -143,6 +143,7 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
         int attempts = pi(etAttempts, 100);
         int pause = pi(etPause, 300);
         int retry = pi(etRetry, 1500);
+        int threads = pi(etRttEvery, 5);
 
         prefs.edit()
             .putString("prefix", prefix).putString("suffix", suffix)
@@ -150,6 +151,7 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
             .putString("attempts", String.valueOf(attempts))
             .putString("pause", String.valueOf(pause))
             .putString("retry", String.valueOf(retry))
+            .putString("threads", String.valueOf(threads))
             .apply();
 
         logBuf.setLength(0);
@@ -162,7 +164,7 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
         try {
             engine = new CrackerEngine(
                 this, prefs, currentNetwork, url, prefix, suffix,
-                digits, attempts, pause, retry);
+                digits, attempts, threads, pause, retry);
             engine.start();
         } catch (Exception e) {
             logBuf.append("❌ ").append(e.toString()).append("\n");

