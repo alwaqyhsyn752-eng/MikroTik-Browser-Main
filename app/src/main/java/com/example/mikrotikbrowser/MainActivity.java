@@ -109,11 +109,15 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
             .setTitle("مسح شامل")
             .setMessage("سيتم مسح كل الأرقام المجربة والكوكيز. هل أنت متأكد؟")
             .setPositiveButton("نعم", (d, w) -> {
+                if (engine != null) { engine.stop(); engine = null; }
                 prefs.edit().remove("tried_" + currentNetwork).apply();
                 CookieManager.getInstance().removeAllCookies(null);
                 CookieManager.getInstance().flush();
                 logBuf.setLength(0);
                 logText.setText("🗑️ تم المسح. اضغط ابدأ من جديد.\n");
+                statusText.setText("متوقف");
+                findViewById(R.id.btnStart).setEnabled(true);
+                findViewById(R.id.btnStop).setEnabled(false);
                 Toast.makeText(this, "تم المسح", Toast.LENGTH_SHORT).show();
             })
             .setNegativeButton("إلغاء", null)
@@ -130,6 +134,13 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
 
         try { currentNetwork = new URI(url).getHost(); }
         catch (Exception e) { currentNetwork = "default"; }
+
+        // تدمير أي محرك قديم إذا كان لا يزال يعمل
+        if (engine != null) {
+            engine.stop();
+            engine = null;
+            try { Thread.sleep(500); } catch (Exception e) {}
+        }
 
         String prefix = etPrefix.getText().toString().trim();
         String suffix = etSuffix.getText().toString().trim();
@@ -154,6 +165,10 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
         logText.setText("");
         voucherResult.setVisibility(View.GONE);
         statusText.setText("جاري التخمين...");
+        
+        // تعطيل زر البدء وتفعيل زر الإيقاف
+        findViewById(R.id.btnStart).setEnabled(false);
+        findViewById(R.id.btnStop).setEnabled(true);
 
         try {
             engine = new CrackerEngine(
@@ -163,13 +178,19 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
         } catch (Exception e) {
             logBuf.append("❌ فشل بدء المحرك: ").append(e.toString()).append("\n");
             logText.setText(logBuf.toString());
-            Toast.makeText(this, "خطأ: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            findViewById(R.id.btnStart).setEnabled(true);
+            findViewById(R.id.btnStop).setEnabled(false);
         }
     }
 
     private void stopCracker() {
-        if (engine != null) engine.stop();
+        if (engine != null) {
+            engine.stop();
+            engine = null;
+        }
         statusText.setText("متوقف");
+        findViewById(R.id.btnStart).setEnabled(true);
+        findViewById(R.id.btnStop).setEnabled(false);
     }
 
     private int pi(EditText e, int def) {
@@ -195,7 +216,6 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
     @Override public void onProgress(final int cur, final int total, final String v) {
         runOnUiThread(() -> {
             statusText.setText("[" + cur + "/" + total + "] " + v);
-            // تحديث خانة الإدخال في صفحة الويب
             String js = "(function(){" +
                 "var i=document.querySelectorAll('input');" +
                 "for(var k=0;k<i.length;k++){" +
@@ -221,6 +241,9 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
             statusText.setText("✅ وجد: " + voucher);
             Toast.makeText(this, "✅ " + voucher, Toast.LENGTH_LONG).show();
             
+            findViewById(R.id.btnStart).setEnabled(true);
+            findViewById(R.id.btnStop).setEnabled(false);
+
             String js = "(function(){" +
                 "var i=document.querySelectorAll('input');" +
                 "for(var k=0;k<i.length;k++){" +
