@@ -10,8 +10,6 @@ import android.os.Looper;
 import android.view.View;
 import android.webkit.*;
 import android.widget.*;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.net.URI;
 
 public class MainActivity extends Activity implements CrackerEngine.Listener {
@@ -163,8 +161,7 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
                 threads, pause, pause * 2, statusEvery, 5000, retry);
             engine.start();
         } catch (Exception e) {
-            logBuf.append("❌ فشل بدء المحرك: ").append(e.toString()).append("
-");
+            logBuf.append("❌ فشل بدء المحرك: ").append(e.toString()).append("\n");
             logText.setText(logBuf.toString());
             Toast.makeText(this, "خطأ: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
@@ -208,10 +205,18 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
             voucherResult.setVisibility(View.VISIBLE);
             statusText.setText("✅ وجد: " + voucher);
             Toast.makeText(this, "✅ " + voucher, Toast.LENGTH_LONG).show();
-            String js = "(function(){var i=document.querySelectorAll('input');" +
-                "for(var k=0;k<i.length;k++){var x=i[k];" +
+            
+            String js = "(function(){" +
+                "var i=document.querySelectorAll('input');" +
+                "for(var k=0;k<i.length;k++){" +
+                "var x=i[k];" +
                 "if(x.type==='text'||x.name==='username'||x.id.indexOf('username')>=0||x.id.indexOf('voucher')>=0){" +
-                "x.value='"+voucher+"';x.dispatchEvent(new Event('input',{bubbles:true}));break;}}})()";
+                "x.value='"+voucher+"';" +
+                "x.dispatchEvent(new Event('input',{bubbles:true}));" +
+                "break;" +
+                "}" +
+                "}" +
+                "})()";
             webView.evaluateJavascript(js, null);
         });
     }
