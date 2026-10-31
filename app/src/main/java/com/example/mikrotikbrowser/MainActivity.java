@@ -223,6 +223,13 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void log(String m) {
             runOnUiThread(() -> appendLog(m));
         }
+        
+        @JavascriptInterface public void clearCookies() {
+            runOnUiThread(() -> {
+                CookieManager.getInstance().removeAllCookies(null);
+                CookieManager.getInstance().flush();
+            });
+        }
         @JavascriptInterface public void saveTried(String v) {
             Set<String> triedSet = new HashSet<>(prefs.getStringSet("tried_" + currentNetwork, new HashSet<>()));
             triedSet.add(v);
@@ -256,11 +263,11 @@ public class MainActivity extends Activity {
                     "}" +
                     "if (found) {" +
                     "  var btn = document.querySelector('input[type=\"submit\"], button[type=\"submit\"], .login-btn, .btn-login');" +
-                    "  if (btn) { btn.click(); }" +
+                    "  // لا نضغط زر الدخول تلقائياً لكي لا تتلوث الجلسة" +
                     "}" +
                     "})()";
                 webView.evaluateJavascript(js, null);
-                webView.postDelayed(() -> webView.reload(), 4000);
+                // لا نعيد التحميل تلقائياً
             });
         }
     }
