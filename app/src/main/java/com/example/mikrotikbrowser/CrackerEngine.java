@@ -296,8 +296,24 @@ public class CrackerEngine {
             }
             
             String low = body.toLowerCase();
-            String respClean = body.replaceAll("<[^>]+>", " ").replaceAll("\\s+", " ").trim();
-            if (respClean.length() > 150) respClean = respClean.substring(0, 150) + "...";
+            
+            // [1] اكتشاف الحظر (حسب الكود الحقيقي للشبكة)
+            if (body.contains("id=\"block\"") || body.contains("انت محظور")) {
+                Result rb = Result.busy("محظور");
+                rb.responseText = "الراوتر حظرك! انتظر حتى ينتهي العداد.";
+                return rb;
+            }
+            
+            // [2] اكتشاف الرقم الخاطئ (الراوتر يعيدك للصفحة الرئيسية)
+            if (body.contains("window.location.href=\"index.html\"") || body.contains("window.location.href=\'index.html\'")) {
+                Result rb = Result.bad("رقم خاطئ");
+                rb.responseText = "الراوتر رفض الرقم (خاطئ أو منتهي)";
+                return rb;
+            }
+            
+            // [3] استخراج النص العادي كخطة بديلة
+            String respClean = body.replaceAll("<[^>]+>", " ").replaceAll("\s+", " ").trim();
+            if (respClean.length() > 100) respClean = respClean.substring(0, 100) + "...";
             if (body.contains("already authorizing") || low.contains("already authorizing")) {
                 Result rb = Result.busy("already authorizing");
                 rb.responseText = respClean;

@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="theme-color" content="#071225" />
+    <title>هلا نت</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=yes">
+    <link rel="stylesheet" href="css/icons.css">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        /* =============== زر البث المباشر الجذاب =============== */
+        .live-stream-btn-wrapper {
+            margin: 16px 0 8px 0;
+            text-align: center;
+        }
+        
+        .live-stream-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            width: 100%;
+            max-width: 380px;
+            padding: 14px 24px;
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 50%, #a93226 100%);
+            color: #fff;
+            border: none;
+            border-radius: 50px;
+            font-size: 18px;
+            font-weight: 700;
+            cursor: pointer;
+            text-decoration: none;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 6px 20px rgba(231, 76, 60, 0.5), 0 0 0 0 rgba(231, 76, 60, 0.7);
+            animation: livePulse 2s infinite;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+        
+        .live-stream-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 28px rgba(231, 76, 60, 0.6), 0 0 0 0 rgba(231, 76, 60, 0.8);
+            background: linear-gradient(135deg, #ff5c4a 0%, #e74c3c 50%, #c0392b 100%);
+        }
+        
+        .live-stream-btn:active {
+            transform: scale(0.96);
+            box-shadow: 0 4px 12px rgba(231, 76, 60, 0.4);
+        }
+        
+        /* أيقونة الكاميرا الحية */
+        .live-stream-btn .live-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 42px;
+            height: 42px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 50%;
+            font-size: 22px;
+            animation: iconBounce 1.5s infinite;
+        }
+        
+        /* نص الزر */
+        .live-stream-btn .live-text {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            line-height: 1.3;
+        }
+        
+        .live-stream-btn .live-text .live-title {
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+        }
+        
+        .live-stream-btn .live-text .live-subtitle {
+            font-size: 12px;
+            font-weight: 400;
+            opacity: 0.9;
+        }
+        
+        /* شارة LIVE الحمراء */
+        .live-badge {
+            position: absolute;
+            top: -8px;
+            right: 20px;
+            background: #ff0;
+            color: #c0392b;
+            font-size: 10px;
+            font-weight: 900;
+            padding: 4px 10px;
+            border-radius: 12px;
+            letter-spacing: 1px;
+            animation: badgeFlash 1s infinite;
+            box-shadow: 0 2px 8px rgba(255,255,0,0.5);
+        }
+        
+        /* تأثير التوهج المتحرك */
+        .live-stream-btn::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+            animation: shimmer 2.5s infinite;
+        }
+        
+        /* =============== الحركات =============== */
+        @keyframes livePulse {
+            0% {
+                box-shadow: 0 6px 20px rgba(231, 76, 60, 0.5), 0 0 0 0 rgba(231, 76, 60, 0.7);
+            }
+            70% {
+                box-shadow: 0 6px 20px rgba(231, 76, 60, 0.5), 0 0 0 14px rgba(231, 76, 60, 0);
+            }
+            100% {
+                box-shadow: 0 6px 20px rgba(231, 76, 60, 0.5), 0 0 0 0 rgba(231, 76, 60, 0);
+            }
+        }
+        
+        @keyframes iconBounce {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.15);
+            }
+        }
+        
+        @keyframes badgeFlash {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+        
+        @keyframes shimmer {
+            0% {
+                transform: translate(-30%, -30%) rotate(0deg);
+            }
+            100% {
+                transform: translate(30%, 30%) rotate(180deg);
+            }
+        }
+        
+        /* =============== تنسيق زر البث في صفحة الحالة =============== */
+        #status .live-stream-btn-wrapper {
+            margin: 8px 0 12px 0;
+        }
+        
+        #status .live-stream-btn {
+            max-width: 100%;
+            font-size: 16px;
+            padding: 12px 20px;
+        }
+        
+        #status .live-stream-btn .live-icon {
+            width: 36px;
+            height: 36px;
+            font-size: 18px;
+        }
+        
+        #status .live-stream-btn .live-text .live-title {
+            font-size: 16px;
+        }
+        
+        #status .live-stream-btn .live-text .live-subtitle {
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body translate="no">
+    <div class="container">
+        <div class="screen">
+            <div class="screen-content">
+                <div class="welcome-modal-overlay" id="welcomeNotice" aria-hidden="true">
+                    <div class="welcome-modal-card" role="dialog" aria-label="إشعار ترحيبي">
+                        <span class="welcome-icon icon-bell-alt"></span>
+                        <h3>مرحباً بكم في شبكة هلا نت</h3>
+                        <p class="welcome-friday">مبارك عليكم يوم الجمعة، وأكثروا من الصلاة والسلام على النبي محمد صلى الله عليه وسلم.</p>
+                        <p class="welcome-free"> <b dir="ltr"> </b>.</p>
+                        <button type="button" class="welcome-continue" id="welcomeContinueBtn">متابعة</button>
+                    </div>
+                </div>
+                <div class="login" id="login">
+                    <div class="main-frame brand-frame">
+                        <div class="brand-dates" aria-label="التاريخ">
+                            <span id="gregorianDate"></span>
+                            <span id="hijriDate"></span>
+                        </div>
+                        <div class="logo"></div>
+                        <div class="nettitle">
+                            
+                        </div>
+                        <div class="brand-divider"></div>
+                        <div class="brand-actions" aria-label="روابط الشبكة السريعة">
+                            <a class="brand-action brand-call" href="tel:+967734549994">
+                                <span class="brand-action-icon icon-phone-squared"></span>
+                                <span>اتصال</span>
+                            </a>
+                            <a class="brand-action brand-whatsapp" href="https://wa.me/967734549994">
+                                <span class="brand-action-icon icon-whatsapp"></span>
+                                <span>واتساب</span>
+                            </a>
+                            <button type="button" class="brand-action brand-info" parent-id="network-info">
+                                <span class="brand-action-icon icon-info-circled"></span>
+                                <span>معلومات الشبكة</span>
+                            </button>
+                        </div>
+                    </div>
+
+
+
+         <span>أستخدم الإنترنت فيما يرضي الله </span>
+                    <div class="main-frame login-frame">
+                        <div class="login-frame-title">
+                            <span class="login-frame-title-icon icon-lock-open-alt"></span>
+                            <span>بوابة الدخول</span>
+                        </div>
+                        <div class="login-form">
+                            <form name="login" onsubmit="return onLoginSubmitted()">
+                                <input type="hidden" name="dst" value="" />
+                                <p class="error" id="error"></p>
+                                <input type="hidden" name="popup" value="true" />
+
+                                <div class="login-tools-frame">
+                                    <button type="button" class="login-tool previous-card-open" parent-id="previous-cards">
+                                        <span class="login-tool-icon icon-history"></span>
+                                        <span class="login-tool-label">
+                                            <span>كرت سابق</span>
+                                            <small>آخر كرتين</small>
+                                        </span>
+                                    </button>
+                                    <button type="button" class="login-tool camera-open" id="startCameraBtn">
+                                        <span class="login-tool-icon icon-camera-alt"></span>
+                                        <span class="login-tool-label">
+                                            <span>تصوير الكرت</span>
+                                            <small>التقاط الرقم</small>
+                                        </span>
+                                    </button>
+                                </div>
+
+                                <!-- ============ زر البث المباشر الجذاب ============ -->
+                                <div class="live-stream-btn-wrapper">
+                                    <button type="button" class="live-stream-btn" onclick="window.location.href='lamasat.html';">
+                                        <span class="live-badge">🔴 LIVE</span>
+                                        <span class="live-icon icon-video"></span>
+                                        <span class="live-text">
+                                            <span class="live-title">البث المباشر</span>
+                                            <span class="live-subtitle">تابع الفعاليات كاس العالم </span>
+                                        </span>
+                                    </button>
+                                </div>
+                                <!-- ============ نهاية زر البث المباشر ============ -->
+
+                                <div class="manual-entry-separator"><span>أو أدخل الرقم يدوياً</span></div>
+
+                                <div class="login-field">
+                                    <span class="login-icon icon-user"></span>
+                                    <input class="login-input" name="username" type="text" value="" placeholder="أدخل رقم الكرت هنا" required autocomplete="off" username-field rm-white-spaces improve-input to-arabic-numbers />
+                                </div>
+
+                                <label>
+                                    <input name="password" type="hidden" placeholder="كلمة المرور" />
+                                </label>
+                                <button type="button" class="login-submit" enable-hot-cookie>تسجيل الدخول</button>
+                            </form>
+                        </div>
+                    </div>
+					<!-- =============== مربع الآيات القرآنية المتجددة =============== -->
+<div class="quran-verse-box" style="margin: 15px 0; padding: 12px 15px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; text-align: center;">
+    <p id="quranVerseText" style="color: #fff; font-size: 15px; line-height: 1.6; margin: 0; font-family: inherit;"></p>
+</div>
+
+<script>
+    // مصفوفة تحتوي على 4 آيات قرآنية
+    const quranVerses = [
+                            "{إِنَّ السَّمْعَ وَالْبَصَرَ وَالْفُؤَادَ كُلُّ أُولَٰئِكَ كَانَ عَنْهُ مَسْئُولًا}",
+                    "{لا تجعل الله أهون الناظرين إليك}",
+                    "﴿قُل لِّلْمُؤْمِنِينَ يَغُضُّوا مِنْ أَبْصَارِهِمْ}",
+                       ];
+
+    // اختيار آية عشوائية عند تحميل الصفحة
+    window.addEventListener('DOMContentLoaded', function() {
+        const randomIndex = Math.floor(Math.random() * quranVerses.length);
+        const verseElement = document.getElementById('quranVerseText');
+        if (verseElement) {
+            verseElement.textContent = quranVerses[randomIndex];
+        }
+    });
+</script>
+<!-- =============== نهاية مربع الآيات القرآنية =============== -->
+<div class="main-frame services-frame">
+    <div class="services-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; text-align: center;">
+        
+        <!-- 1. زر القرآن الكريم (الأول) -->
+        <button type="button" onclick="window.open('https://quran.tv', '_blank');" style="padding: 15px 7px; font-size: 12px;">
+            <span class="rbtn" style="width: 44px; height: 44px; line-height: 44px; margin: 0 auto 4px;"><span class="btnicon icon-book" style="font-size: 16px;"></span></span>
+            القرآن الكريم مجانأ 
+        </button>
+
+        <!-- 2. زر الكروت والاسعار (الثاني) -->
+        <button type="button" parent-id="price" style="padding: 15px 7px; font-size: 12px;">
+            <span class="rbtn" style="width: 44px; height: 44px; line-height: 44px; margin: 0 auto 4px;"><span class="btnicon icon-money" style="font-size: 16px;"></span></span>
+            الكروت والاسعار
+        </button>
+
+        <!-- 3. زر نقاط البيع (الثالث) -->
+        <button type="button" parent-id="sell-point" style="padding: 15px 7px; font-size: 12px;">
+            <span class="rbtn" style="width: 44px; height: 44px; line-height: 44px; margin: 0 auto 4px;"><span class="btnicon icon-basket" style="font-size: 16px;"></span></span>
+            نقاط البيع
+        </button>
+
+        <!-- 4. زر تعليمات (الرابع والأخير) -->
+        <button type="button" parent-id="info" style="padding: 15px 7px; font-size: 12px;">
+            <span class="rbtn" style="width: 44px; height: 44px; line-height: 44px; margin: 0 auto 4px;"><span class="btnicon icon-info-circled" style="font-size: 16px;"></span></span>
+            تعليمات
+        </button>
+
+    </div>
+</div>
+                </div>
+
+                <div class="camera-modal-overlay" id="cameraModalOverlay">
+                    <div class="camera-modal">
+                        <button type="button" class="camera-close" id="closeCameraBtn" aria-label="إغلاق">
+                            <span class="icon-cancel"></span>
+                        </button>
+                        <p class="title camera-title">تصوير رقم الكرت</p>
+                        <div class="camera-container"></div>
+                        <div class="scan-status" id="scanStatus"></div>
+                    </div>
+                </div>
+
+                <div class="app" id="previous-cards">
+                    <p class="title">كرت سابق</p>
+                    <div class="app-bot">
+                        <p class="contact-text">اختر أحد آخر كرتين تم تسجيل الدخول بهم ليتم نقله مباشرة إلى خانة إدخال الكرت</p>
+                        <div class="previous-cards-list" id="previousCardsList"></div>
+                        <p class="previous-cards-empty" id="previousCardsEmpty">لا توجد كروت محفوظة حتى الآن</p>
+                        <div class="app-logout app-submit">رجوع</div>
+                    </div>
+                </div>
+
+                <div class="app" id="network-info">
+                    <p class="title">معلومات حول الشبكة</p>
+                    <div class="app-bot popup-rich-content">
+                        <div class="popup-hero">
+                            <span class="popup-hero-icon icon-wifi"></span>
+                            <div>
+                                <h3>شبكة هلا نت</h3>
+                                <p>بوابة إنترنت بالكرت صُممت لتسهيل الدخول، المتابعة، والتواصل مع خدمة العملاء بسرعة ووضوح.</p>
+                            </div>
+                        </div>
+
+                        <div class="popup-section">
+                            <h3><span class="icon-signal"></span> نوع الخدمة</h3>
+                            <p>خدمة هوتسبوت بالكرت، يتم تسجيل الدخول برقم الكرت فقط، مع متابعة بيانات الكرت من صفحة الحالة بعد الدخول.</p>
+                        </div>
+
+                        <div class="popup-section">
+                            <h3><span class="icon-key"></span> خيارات الدخول المتوفرة</h3>
+                            <div class="feature-list">
+                                <div class="feature-item">
+                                    <span class="feature-icon icon-camera-alt"></span>
+                                    <div>
+                                        <strong>تصوير رقم الكرت</strong>
+                                        <p>افتح الكاميرا وصوّر رقم الكرت بوضوح، ثم يتم نقله إلى خانة الإدخال.</p>
+                                    </div>
+                                </div>
+                                <div class="feature-item">
+                                    <span class="feature-icon icon-history"></span>
+                                    <div>
+                                        <strong>آخر كرتين</strong>
+                                        <p>يعرض آخر كرتين تم استخدامهما، وبضغطة واحدة ينتقل الرقم إلى خانة الإدخال.</p>
+                                    </div>
+                                </div>
+                                <div class="feature-item">
+                                    <span class="feature-icon icon-user"></span>
+                                    <div>
+                                        <strong>الإدخال اليدوي</strong>
+                                        <p>يمكنك كتابة رقم الكرت يدويًا عند الحاجة، بدون مسافات أو رموز إضافية.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="popup-section">
+                            <h3><span class="icon-street-view"></span> مناطق توفر الشبكة</h3>
+                            <div class="area-tags">
+                                <span>المشاهد</span>
+                                <span>العريف</span>
+                                <span>حال جودي</span>
+                                <span>حال غلاب</span>
+                                <span>حال عكر</span>
+                                <span>حال زكير</span>
+                                <span>حلبد</span>
+                                <span>السوق</span>
+                            </div>
+                        </div>
+
+                        <div class="popup-section support-section">
+                            <h3><span class="icon-headphones"></span> الدعم والتواصل</h3>
+                            <p>للاستفسار أو المساعدة في الدخول، تواصل مع خدمة العملاء عبر الاتصال أو الواتساب.</p>
+                            <div class="customer-actions compact-actions">
+                                <a class="contact-action" href="tel:+967734549994">
+                                    <span class="contact-action-icon icon-phone-squared"></span>
+                                    734549994
+                                </a>
+                                <a class="contact-action" href="tel:+967734012208">
+                                    <span class="contact-action-icon icon-phone-squared"></span>
+                                    734012208
+                                </a>
+                                <a class="contact-action" href="https://wa.me/967734549994">
+                                    <span class="contact-action-icon icon-whatsapp"></span>
+                                    واتساب
+                                </a>
+                            </div>
+                        </div>
+
+                        <div class="app-logout app-submit">رجوع</div>
+                    </div>
+                </div>
+
+                <div class="app" id="price">
+                    <p class="title">الكروت والاسعار</p>
+                    <div class="app-bot">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th scope="col">الفئة</th>
+                                    <th scope="col">الوقت</th>
+                                    <th scope="col">الرصيد</th>
+                                    <th scope="col">الصلاحية</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                             
+                                <tr>
+                                    <td>500 ريال</td>
+                                    <td>  مفتوحة</td>
+                                    <td>3.5 جيجا</td>
+                                    <td>3 ايام</td>
+                                </tr>
+ <tr>
+                                    <td>1000 ريال</td>
+                                    <td>  مفتوحة</td>
+                                    <td>7 جيجا</td>
+                                    <td>7 يوم</td>
+                                </tr>
+                             
+ <tr>
+                                    <td>3000 ريال</td>
+                                    <td>  مفتوحة</td>
+                                    <td>22 جيجا</td>
+                                    <td>20 يوم</td>
+                                </tr>
+                            
+<tr>
+                                    <td>5000 ريال</td>
+                                    <td>  مفتوحة</td>
+                                    <td>35 جيجا</td>
+                                    <td>30 يوم</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="app-logout app-submit">رجوع</div>
+                    </div>
+                </div>
+
+                <div class="app" id="sell-point">
+                    <p class="title">نقاط البيع</p>
+                    <div class="app-bot popup-rich-content sell-content">
+                        <div class="popup-hero sell-hero">
+                            <span class="popup-hero-icon icon-basket"></span>
+                            <div>
+                                <h3>أماكن توفر كروت الشبكة</h3>
+                                <p>تتوفر كروت هلا نت في البقالات والنقاط المعتمدة داخل مناطق التغطية.</p>
+                            </div>
+                        </div>
+
+                        <div class="sell-cards">
+                            <div class="sell-card">
+                                <span class="sell-card-icon icon-ok-circled"></span>
+                                <div>
+                                    <strong>نقاط بيع معتمدة</strong>
+                                    <p>اشترِ الكرت من أقرب بقالة أو نقطة بيع في منطقتك، وتأكد من وضوح رقم الكرت قبل المغادرة.</p>
+                                </div>
+                            </div>
+                            <div class="sell-card">
+                                <span class="sell-card-icon icon-street-view"></span>
+                                <div>
+                                    <strong>مناطق توفر الكروت</strong>
+                                    <p>الكروت متوفرة حسب التغطية في المناطق التالية والمناطق المجاورة لها.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                       
+
+                        <div class="popup-section sell-note">
+                            <h3><span class="icon-attention-circled"></span> تنبيه قبل الشراء</h3>
+                            <p>احتفظ بالكرت بعد الشراء، ولا تشارك رقمه مع أي شخص حتى لا يتم استخدامه من جهاز آخر.</p>
+                        </div>
+
+                        <div class="app-logout app-submit">رجوع</div>
+                    </div>
+                </div>
+
+                <div class="app" id="info">
+                    <p class="title">تعليمات وتنبيهات</p>
+                    <div class="app-bot popup-rich-content info-content">
+                        <div class="popup-hero alert-hero">
+                            <span class="popup-hero-icon icon-attention-circled"></span>
+                            <div>
+                                <h3>تنبيهات مهمة لاستخدام أفضل</h3>
+                                <p>اتبع الإرشادات التالية لتسجيل الدخول بسرعة، والحفاظ على رصيد الكرت، واستخدام الشبكة بطريقة صحيحة.</p>
+                            </div>
+                        </div>
+
+                        <div class="notice-list">
+                            <div class="notice-item">
+                                <span class="notice-icon icon-key"></span>
+                                <div>
+                                    <strong>اكتب رقم الكرت كما هو</strong>
+                                    <p>تجنب المسافات والرموز، واكتب الرقم كاملًا قبل الضغط على تسجيل الدخول.</p>
+                                </div>
+                            </div>
+                            <div class="notice-item">
+                                <span class="notice-icon icon-camera-alt"></span>
+                                <div>
+                                    <strong>استخدام تصوير الكرت</strong>
+                                    <p>صوّر الرقم في إضاءة واضحة واجعل الرقم في منتصف الصورة، ثم تأكد من الرقم قبل تسجيل الدخول.</p>
+                                </div>
+                            </div>
+                            <div class="notice-item">
+                                <span class="notice-icon icon-history"></span>
+                                <div>
+                                    <strong>استخدام كرت سابق</strong>
+                                    <p>يمكنك اختيار أحد آخر كرتين تم استخدامهما لتعبئة خانة الإدخال بسرعة.</p>
+                                </div>
+                            </div>
+                            <div class="notice-item">
+                                <span class="notice-icon icon-download-cloud"></span>
+                                <div>
+                                    <strong>حافظ على رصيدك</strong>
+                                    <p>أوقف التحديثات التلقائية للتطبيقات، وانتبه لتطبيقات الفيديو لأنها تستهلك الرصيد بسرعة.</p>
+                                </div>
+                            </div>
+                            <div class="notice-item faith-note">
+                                <span class="notice-icon icon-ok-circled"></span>
+                                <div>
+                                    <strong>استخدم الشبكة فيما يرضي الله</strong>
+                                    <p>اجعل استخدامك للإنترنت فيما ينفعك وينفع أهلك ومجتمعك، وتجنب كل ما لا يرضي الله.</p>
+                                </div>
+                            </div>
+                            <div class="notice-item">
+                                <span class="notice-icon icon-headphones"></span>
+                                <div>
+                                    <strong>عند وجود مشكلة</strong>
+                                    <p>تواصل مع خدمة العملاء، واذكر رقم الكرت ونوع المشكلة حتى يتم مساعدتك بسرعة.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="app-logout app-submit">رجوع</div>
+                    </div>
+                </div>
+
+                <div class="app" id="status">
+                    <p class="title">تم تسجيل الدخول بنجاح</p>
+                    <div class="app-bot">
+                        <!-- ============ زر البث المباشر في صفحة الحالة ============ -->
+                        <div class="live-stream-btn-wrapper">
+                            <button type="button" class="live-stream-btn" onclick="window.location.href='lamasat.html';">
+                                <span class="live-badge">🔴 LIVE</span>
+                                <span class="live-icon icon-video"></span>
+                                <span class="live-text">
+                                    <span class="live-title">البث المباشر</span>
+                                    <span class="live-subtitle">تابع الفعاليات والمناسبات</span>
+                                </span>
+                            </button>
+                        </div>
+                        <!-- ============ نهاية زر البث المباشر ============ -->
+                        
+                        <a class="status-link" href="status.html">إذا لم يتم الاتصال تلقائياً اضغط هنا</a>
+                        <div class="data"><span>رقم الكرت :</span><span id="username">---</span></div>
+                        <div class="data"><span>التحميل المتبقي :</span><span id="remain_bytes_total">غير محدود</span></div>
+                        <div class="data"><span>الوقت المتبقي :</span><span id="session_time_left">غير محدود</span></div>
+                        <div class="data"><span>متصل منذ :</span><span id="uptime">---</span></div>
+                        <div class="data"><span>الاستهلاك :</span><span id="bytes_in"></span></div>
+                        <div class="status-actions">
+                            <button class="app-submit logout-submit" erase-cookie clear-hot-cookie><span class="button-icon icon-off"></span>تسجيل الخروج</button>
+                            <button type="button" class="app-submit service-submit" id="statusCustomerServiceButton"><span class="button-icon icon-headphones"></span>خدمة العملاء</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="app" id="status-customer-service">
+                    <p class="title">خدمة العملاء</p>
+                    <div class="app-bot">
+                        <p class="contact-text">للتواصل مع خدمة العملاء اختر الطريقة المناسبة لك</p>
+                        <div class="customer-actions">
+                            <a class="contact-action" href="tel:+967734549994">
+                                <span class="contact-action-icon icon-phone-squared"></span>
+                                734549994
+                            </a>
+                            <a class="contact-action" href="tel:+967734012208">
+                                <span class="contact-action-icon icon-phone-squared"></span>
+                                734012208
+                            </a>
+                            <a class="contact-action" href="https://wa.me/967734549994">
+                                <span class="contact-action-icon icon-whatsapp"></span>
+                                واتساب
+                            </a>
+                        </div>
+                        <div class="data"><span>أرقام التواصل :</span><span dir="ltr">734549994 - 734012208</span></div>
+                        <div class="data"><span>واتساب :</span><span dir="ltr">734549994</span></div>
+                        <button type="button" class="app-submit status-service-back" id="statusCustomerServiceBack">رجوع</button>
+                    </div>
+                </div>
+
+                <div class="app" id="block">
+                    <p class="title">انت محظور</p>
+                    <div class="app-bot">
+                        <p class="contact-text">لقد تم حظرك بسبب محاولات تسجيل الدخول الكثيرة الخاطئة</p>
+                        <div class="app-user"><span>بقي على فك الحظر: </span><span count-down-span></span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+       <input type="hidden" id="sys_token" value="important">
+        <script src="js/hotInImprover.min.js"></script>
+        <script src="js/hotCookie.min.js"></script>
+        <script src="js/hotBlocker.min.js" enable-hot-blocker try-count="10" block-time="1"></script>
+        <script src="js/main.min.js" link-login-only="http://7.7.7.7/login"></script>
+        <script src="js/cam.najm.js"></script>
+    </div>
+	<!-- =============== حقوق البرمجة في نهاية الصفحة =============== -->
+<div style="text-align: center; margin: 20px 0 10px 0; padding: 10px;">
+    <a href="tel:+967775785614" style="color: #d4af37; font-size: 13px; text-decoration: none; font-weight: bold; font-family: inherit; display: inline-block; transition: 0.3s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+        برمجه الشبكه :مكتب الكلدي تك:776944473
+    </a>
+</div>
+<!-- =============== نهاية حقوق البرمجة =============== -->
+</body>
+</html>
