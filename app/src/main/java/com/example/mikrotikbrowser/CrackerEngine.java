@@ -150,16 +150,9 @@ public class CrackerEngine {
                 }
                 
                 if (r.busy) {
-                    int waitSec = extractWaitTime(r.responseText); // إضافة 30 ثانية أمان
-                    log("[W" + id + "]   🛑 حظر — الراوتر يطلب " + waitSec + " ثانية (سيتم تغيير البصمة)");
-                    cookies.clear(); // مسح الكوكيز لتجاوز الحظر
-                    int remaining = waitSec;
-                    while (remaining > 0 && !found.get() && !stopped.get()) {
-                        int chunk = Math.min(5, remaining);
-                        sleep(chunk * 1000L);
-                        remaining -= chunk;
-                        if (remaining > 0) log("[W" + id + "]   ⏱ " + remaining + "ث متبقية");
-                    }
+                    log("[W" + id + "]   🛑 حظر مؤقت — تبديل الجلسة والمحاولة بعد ثانيتين");
+                    cookies.clear();
+                    sleep(2000); // انتظار ثانيتين فقط بدل 60
                     break;
                 }
                 
