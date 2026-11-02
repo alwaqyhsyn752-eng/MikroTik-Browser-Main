@@ -27,7 +27,7 @@ public class CrackerEngine {
         void onFound(String voucher, String status);
     }
 
-    private static final int ATTEMPTS_PER_SESSION = 4;
+    private static final int ATTEMPTS_PER_SESSION = 1;
     
     private final Listener listener;
     private final SharedPreferences prefs;
@@ -150,7 +150,7 @@ public class CrackerEngine {
                 }
                 
                 if (r.busy) {
-                    int waitSec = extractWaitTime(r.responseText) + 30; // إضافة 30 ثانية أمان
+                    int waitSec = extractWaitTime(r.responseText); // إضافة 30 ثانية أمان
                     log("[W" + id + "]   🛑 حظر — الراوتر يطلب " + waitSec + " ثانية (سيتم تغيير البصمة)");
                     cookies.clear(); // مسح الكوكيز لتجاوز الحظر
                     int remaining = waitSec;
