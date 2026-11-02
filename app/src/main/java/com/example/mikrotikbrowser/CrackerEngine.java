@@ -27,7 +27,7 @@ public class CrackerEngine {
         void onFound(String voucher, String status);
     }
 
-    private static final int ATTEMPTS_PER_SESSION = 1;
+    private static final int ATTEMPTS_PER_SESSION = 4;
     
     private final Listener listener;
     private final SharedPreferences prefs;
