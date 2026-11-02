@@ -427,14 +427,7 @@ public class CrackerEngine {
         return sb.toString();
     }
 
-    private String ua() {
-        String[] a = {
-            "Mozilla/5.0 (Linux; Android 13; SM-S911B) AppleWebKit/537.36 Chrome/118.0 Mobile",
-            "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 Chrome/115.0 Mobile",
-            "Mozilla/5.0 (Linux; Android 11; SM-A515F) AppleWebKit/537.36 Chrome/110.0 Mobile"
-        };
-        return a[rng.nextInt(a.length)];
-    }
+    
 
     private String read(InputStream is) throws IOException {
         ByteArrayOutputStream b = new ByteArrayOutputStream();
