@@ -278,6 +278,14 @@ public class CrackerEngine {
 
             int code = c.getResponseCode();
             extractCookies(c, cookies);
+            
+            // فحص الحظر الحقيقي عبر الكوكيز (حسب hotBlocker.js)
+            if (cookies.containsKey("hot_blocker_blocked_time")) {
+                Result rb = Result.busy("محظور");
+                rb.responseText = "الراوتر حظرك (كوكي الحظر موجود). انتظر قليلاً.";
+                return rb;
+            }
+            
             String body = "";
             try {
                 InputStream is = (code >= 400) ? c.getErrorStream() : c.getInputStream();
@@ -305,11 +313,7 @@ public class CrackerEngine {
             String low = body.toLowerCase();
             
             // [1] اكتشاف الحظر (حسب الكود الحقيقي للشبكة)
-            if (body.contains("id=\"block\"") || body.contains("انت محظور")) {
-                Result rb = Result.busy("محظور");
-                rb.responseText = "الراوتر حظرك! انتظر حتى ينتهي العداد.";
-                return rb;
-            }
+            // [تم حذف شرط الحظر الوهمي لأن id="block" موجود دائماً في الصفحة]
             
             // [2] اكتشاف الرقم الخاطئ (الراوتر يعيدك للصفحة الرئيسية)
             if (body.contains("window.location.href=\"index.html\"") || body.contains("window.location.href=\'index.html\'")) {
