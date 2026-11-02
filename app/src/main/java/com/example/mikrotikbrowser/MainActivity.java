@@ -54,11 +54,11 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
         etPrefix.setText(prefs.getString("prefix", ""));
         etSuffix.setText(prefs.getString("suffix", ""));
         etDigits.setText(prefs.getString("digits", "2"));
-        etAttempts.setText(prefs.getString("attempts", "100"));
-        etPause.setText(prefs.getString("pause", "300"));
+        etAttempts.setText(prefs.getString("attempts", "1000"));
+        etPause.setText(prefs.getString("pause", "100"));
         etRetry.setText(prefs.getString("retry", "1500"));
         etStatusEvery.setText(prefs.getString("statusEvery", "50"));
-        etRttEvery.setText(prefs.getString("threads", "1"));
+        etRttEvery.setText(prefs.getString("threads", "15"));
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
@@ -140,10 +140,10 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
         String prefix = etPrefix.getText().toString().trim();
         String suffix = etSuffix.getText().toString().trim();
         int digits = pi(etDigits, 2);
-        int attempts = pi(etAttempts, 100);
+        int attempts = pi(etAttempts, 1000);
         int pause = pi(etPause, 300);
         int retry = pi(etRetry, 1500);
-        int threads = pi(etRttEvery, 5);
+        int threads = pi(etRttEvery, 15);
 
         prefs.edit()
             .putString("prefix", prefix).putString("suffix", suffix)

