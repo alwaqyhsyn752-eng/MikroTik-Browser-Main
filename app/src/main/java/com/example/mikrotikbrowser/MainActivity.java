@@ -135,41 +135,28 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
         try { currentNetwork = new URI(url).getHost(); }
         catch (Exception e) { currentNetwork = "default"; }
 
-        if (engine != null) { engine.stop(); engine = null; try { Thread.sleep(500); } catch (Exception e) {} }
-
         String prefix = etPrefix.getText().toString().trim();
         String suffix = etSuffix.getText().toString().trim();
         int digits = pi(etDigits, 2);
-        int attempts = pi(etAttempts, 1000);
+        int attempts = pi(etAttempts, 100);
         int pause = pi(etPause, 300);
-        int retry = pi(etRetry, 1500);
-        int threads = pi(etRttEvery, 15);
-
-        prefs.edit()
-            .putString("prefix", prefix).putString("suffix", suffix)
-            .putString("digits", String.valueOf(digits))
-            .putString("attempts", String.valueOf(attempts))
-            .putString("pause", String.valueOf(pause))
-            .putString("retry", String.valueOf(retry))
-            .putString("threads", String.valueOf(threads))
-            .apply();
 
         logBuf.setLength(0);
-        logText.setText("");
+        logText.setText("▶ بدء التخمين المرئي...\n");
         voucherResult.setVisibility(View.GONE);
         statusText.setText("جاري التخمين...");
         findViewById(R.id.btnStart).setEnabled(false);
         findViewById(R.id.btnStop).setEnabled(true);
 
-        try {
-            engine = new CrackerEngine(this, prefs, currentNetwork, url, prefix, suffix, digits, attempts, threads, pause);
-            engine.start();
-        } catch (Exception e) {
-            logBuf.append("❌ ").append(e.toString()).append("\n");
-            logText.setText(logBuf.toString());
-            findViewById(R.id.btnStart).setEnabled(true);
-            findViewById(R.id.btnStop).setEnabled(false);
-        }
+        String cfg = "window.FINDER_CONFIG={"
+            + "url:'" + url + "',"
+            + "prefix:'" + prefix + "',"
+            + "suffix:'" + suffix + "',"
+            + "digits:" + digits + ","
+            + "attempts:" + attempts + ","
+            + "pause:" + pause + "};";
+        webView.evaluateJavascript(cfg, null);
+        webView.evaluateJavascript(finderJs, null);
     }
 
     private void stopCracker() {
