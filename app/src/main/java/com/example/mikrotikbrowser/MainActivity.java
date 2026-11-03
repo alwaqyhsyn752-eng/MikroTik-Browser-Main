@@ -22,6 +22,7 @@ public class MainActivity extends Activity {
     private StringBuilder logBuf = new StringBuilder();
     private Handler uiHandler = new Handler(Looper.getMainLooper());
     private boolean logUpdatePending = false;
+    private boolean[] isRunning = new boolean[]{false, false, false, false};
     private final String[] UAS = {
         "Mozilla/5.0 (Linux; Android 13; SM-S911B) AppleWebKit/537.36 Chrome/118.0 Mobile",
         "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 Chrome/115.0 Mobile",
@@ -80,6 +81,19 @@ public class MainActivity extends Activity {
             CookieManager.getInstance().setAcceptThirdPartyCookies(webs[i], true);
             webs[i].addJavascriptInterface(new Bridge(id), "AndroidBridge" + id);
             webs[i].setWebViewClient(new WebViewClient() {
+                @Override public void onPageFinished(WebView view, String url) {
+                    if (isRunning[id]) {
+                        String p = etPrefix.getText().toString().trim();
+                        String s = etSuffix.getText().toString().trim();
+                        int d = parseInt(etDigits, 7);
+                        int a = parseInt(etAttempts, 1000);
+                        int pz = parseInt(etPause, 200);
+                        String cfg = "window.FINDER_CONFIG={id:" + id + ",prefix:'" + p + "',suffix:'" + s + "',digits:" + d + ",attempts:" + a + ",pause:" + pz + "};";
+                        view.evaluateJavascript(cfg, null);
+                        view.evaluateJavascript(finderJs, null);
+                        appendLog("[W" + id + "] 🔄 تم إعادة حقن السكربت (جلسة جديدة)");
+                    }
+                }
                 @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                     if (request.isForMainFrame()) appendLog("[W" + id + "] ❌ خطأ تحميل: " + error.getDescription());
                 }
@@ -132,6 +146,7 @@ public class MainActivity extends Activity {
         int pz = parseInt(etPause, 200);
 
         for (int i = 0; i < 4; i++) {
+            isRunning[i] = true;
             String cfg = "window.FINDER_CONFIG={id:" + i + ",prefix:'" + p + "',suffix:'" + s + "',digits:" + d + ",attempts:" + a + ",pause:" + pz + "};";
             webs[i].evaluateJavascript(cfg, null);
             webs[i].evaluateJavascript(finderJs, null);
@@ -142,7 +157,10 @@ public class MainActivity extends Activity {
     }
 
     private void stopAll() {
-        for (int i = 0; i < 4; i++) webs[i].evaluateJavascript("window.stopFinder && window.stopFinder();", null);
+        for (int i = 0; i < 4; i++) {
+            isRunning[i] = false;
+            webs[i].evaluateJavascript("window.stopFinder && window.stopFinder();", null);
+        }
         statusText.setText("⏹ تم الإيقاف");
         appendLog("⏹ تم الإيقاف");
     }
