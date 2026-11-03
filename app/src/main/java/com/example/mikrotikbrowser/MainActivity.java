@@ -26,12 +26,19 @@ public class MainActivity extends Activity implements CrackerEngine.Listener {
     private Handler uiHandler = new Handler(Looper.getMainLooper());
     private boolean logUpdatePending = false;
     private String currentNetwork = "default";
+    private String finderJs = "";
     private CrackerEngine engine;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        try {
+            java.io.InputStream is = getAssets().open("finder.js");
+            byte[] buf = new byte[is.available()];
+            is.read(buf); is.close();
+            finderJs = new String(buf, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {}
         prefs = getSharedPreferences("finder", MODE_PRIVATE);
 
         webView = findViewById(R.id.webView);
