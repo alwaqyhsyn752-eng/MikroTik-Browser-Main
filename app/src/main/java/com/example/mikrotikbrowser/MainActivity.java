@@ -169,6 +169,14 @@ public class MainActivity extends Activity {
         public Bridge(int id) { this.id = id; }
         @JavascriptInterface public void log(String m) { runOnUiThread(() -> appendLog("[W" + id + "] " + m)); }
         @JavascriptInterface public void progress(int c, int t, String v) { runOnUiThread(() -> statusText.setText("[W" + id + "] [" + c + "/" + t + "] " + v)); }
+        @JavascriptInterface public void clearCookies() {
+            runOnUiThread(() -> {
+                CookieManager.getInstance().removeAllCookies(null);
+                CookieManager.getInstance().flush();
+                appendLog("[W" + id + "] 🧹 تم مسح الكوكيز (جلسة جديدة)");
+            });
+        }
+        
         @JavascriptInterface public void found(String v, String st) {
             runOnUiThread(() -> {
                 appendLog("✅✅✅ [W" + id + "] وجد الكرت: " + v);

