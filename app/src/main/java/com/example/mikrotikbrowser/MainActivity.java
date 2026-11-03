@@ -176,6 +176,7 @@ public class MainActivity extends Activity {
                 voucherResult.setText("✅ الكرت: " + v);
                 voucherResult.setVisibility(View.VISIBLE);
                 Toast.makeText(MainActivity.this, "✅ W" + id + ": " + v, Toast.LENGTH_LONG).show();
+                stopAll(); // 🚀 إيقاف كل الشاشات فوراً
             });
         }
     }
