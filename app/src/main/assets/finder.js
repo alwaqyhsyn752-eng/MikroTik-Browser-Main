@@ -1,7 +1,6 @@
 (function() {
     const CFG = window.FINDER_CONFIG;
-    if (!CFG) return;
-    if (window.__cracking) return;
+    if (!CFG || window.__cracking) return;
     window.__cracking = true;
     let stopped = false;
     window.stopFinder = function() { stopped = true; window.__cracking = false; };
@@ -10,7 +9,7 @@
     const log = (m) => { try { window["AndroidBridge" + id].log(m); } catch(e) {} };
 
     async function run() {
-        log('▶ بدء (شاشة ' + id + ')');
+        log('▶ بدء');
         const input = document.querySelector('input[name="username"]');
         const btn = document.querySelector('.login-submit') || document.querySelector('button[type="submit"]');
         
