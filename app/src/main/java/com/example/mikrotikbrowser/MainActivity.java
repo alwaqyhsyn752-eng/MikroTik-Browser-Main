@@ -136,7 +136,6 @@ public class MainActivity extends Activity {
     }
 
     private void startAll() {
-        stoppedState = false; // إعادة تعيين الحالة
         prefs.edit().putString("prefix", etPrefix.getText().toString()).putString("suffix", etSuffix.getText().toString())
             .putString("digits", etDigits.getText().toString()).putString("attempts", etAttempts.getText().toString())
             .putString("pause", etPause.getText().toString()).putString("retry", etRetry.getText().toString())
@@ -147,22 +146,27 @@ public class MainActivity extends Activity {
         int d = parseInt(etDigits, 7);
         int a = parseInt(etAttempts, 1000);
         int pz = parseInt(etPause, 200);
+        
+        // قراءة عدد الشاشات من خانة "التوازي" (etRttEvery)
+        int threads = parseInt(etRttEvery, 1);
+        if (threads < 1) threads = 1;
+        if (threads > 4) threads = 4;
 
-        appendLog("▶ بدء التخمين المتناوب (لعدم تعليق الشبكة)");
+        appendLog("▶ بدء التخمين على " + threads + " شاشة");
         voucherResult.setVisibility(View.GONE);
         statusText.setText("جاري التخمين...");
 
-        // تشغيل العمال بالتناوب (كل عامل يبدأ بعده 2500 ملي ثانية)
-        for (int i = 0; i < 4; i++) {
+        // تشغيل الشاشات المحددة فقط وبالتناوب
+        for (int i = 0; i < threads; i++) {
             final int index = i;
             uiHandler.postDelayed(() -> {
-                if (isRunning[index] || stoppedState) return; // لا تبدأ إذا تم الإيقاف
+                if (isRunning[index] || stoppedState) return;
                 isRunning[index] = true;
                 String cfg = "window.FINDER_CONFIG={id:" + index + ",prefix:'" + p + "',suffix:'" + s + "',digits:" + d + ",attempts:" + a + ",pause:" + pz + "};";
                 webs[index].evaluateJavascript(cfg, null);
                 webs[index].evaluateJavascript(finderJs, null);
                 appendLog("[W" + index + "] ▶ بدأ العامل");
-            }, i * 2500); // 2.5 ثانية تأخير بين كل شاشة
+            }, i * 1500); // 1.5 ثانية تأخير بين كل شاشة لكي لا تتزامن
         }
     }
 
