@@ -28,17 +28,6 @@
             const num = Math.floor(Math.random() * (maxVal + 1));
             const v = CFG.prefix + String(num).padStart(CFG.digits, '0') + CFG.suffix;
 
-            // 🔒 انتظار الدور (القفل الزمني العام)
-            // الشاشة لن ترسل أي طلب حتى ينتهي وقت "التأخير" من آخر طلب في أي شاشة أخرى
-            log('⏳ في انتظار الدور...');
-            while (!stopped) {
-                let canGo = window["AndroidBridge" + id].requestTurn(CFG.pause || 1500);
-                if (canGo) break;
-                await new Promise(r => setTimeout(r, 100));
-            }
-            if (stopped) break;
-
-            // الآن جاء دور هذه الشاشة
             input.value = v;
             input.dispatchEvent(new Event('input', {bubbles:true}));
             input.dispatchEvent(new Event('change', {bubbles:true}));
@@ -49,6 +38,7 @@
 
             if (btn) { try { btn.click(); } catch(e) {} }
 
+            // انتظار استجابة الراوتر
             await new Promise(r => setTimeout(r, 1500));
 
             const pageText = document.body.innerText;
@@ -71,6 +61,9 @@
             if (errDiv && errDiv.innerText.trim() !== "") {
                 log('📄 ' + errDiv.innerText.trim());
             }
+
+            // ✅ تأخير ثابت بين كل محاولة وأخرى (حسب ما تكتبه في الإعدادات)
+            await new Promise(r => setTimeout(r, CFG.pause || 500));
         }
         log('❌ انتهى');
         window.__cracking = false;

@@ -26,10 +26,12 @@ public class MainActivity extends Activity {
     private long lastAttemptTime = 0;
     private boolean[] isRunning = new boolean[]{false, false, false, false};
     private final String[] UAS = {
-        "Mozilla/5.0 (Linux; Android 13; SM-S911B) AppleWebKit/537.36 Chrome/118.0 Mobile",
-        "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 Chrome/115.0 Mobile",
-        "Mozilla/5.0 (Linux; Android 11; SM-A515F) AppleWebKit/537.36 Chrome/110.0 Mobile",
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 Version/16.0 Mobile"
+        "Mozilla/5.0 (Linux; Android 13; SM-S911B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 11; SM-A515F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 10; Redmi Note 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
     };
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -106,7 +108,9 @@ public class MainActivity extends Activity {
             targetUrl = urlBar.getText().toString().trim();
             if (!targetUrl.startsWith("http")) targetUrl = "http://" + targetUrl;
             prefs.edit().putString("url", targetUrl).apply();
-            for (int i = 0; i < 4; i++) webs[i].loadUrl(targetUrl);
+            for (int i = 0; i < 4; i++) Random rand = new Random();
+            webs[i].getSettings().setUserAgentString(UAS[rand.nextInt(UAS.length)]);
+            webs[i].loadUrl(targetUrl);
             appendLog("تم تحميل الرابط في 4 شاشات");
         });
 
@@ -132,7 +136,9 @@ public class MainActivity extends Activity {
         });
 
         targetUrl = urlBar.getText().toString();
-        for (int i = 0; i < 4; i++) webs[i].loadUrl(targetUrl);
+        for (int i = 0; i < 4; i++) Random rand = new Random();
+            webs[i].getSettings().setUserAgentString(UAS[rand.nextInt(UAS.length)]);
+            webs[i].loadUrl(targetUrl);
     }
 
     private void startAll() {
