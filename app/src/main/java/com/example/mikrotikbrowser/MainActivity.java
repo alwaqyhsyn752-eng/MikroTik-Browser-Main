@@ -22,6 +22,7 @@ public class MainActivity extends Activity {
     private StringBuilder logBuf = new StringBuilder();
     private Handler uiHandler = new Handler(Looper.getMainLooper());
     private boolean logUpdatePending = false;
+    private boolean stoppedState = false;
     private boolean[] isRunning = new boolean[]{false, false, false, false};
     private final String[] UAS = {
         "Mozilla/5.0 (Linux; Android 13; SM-S911B) AppleWebKit/537.36 Chrome/118.0 Mobile",
@@ -145,18 +146,26 @@ public class MainActivity extends Activity {
         int a = parseInt(etAttempts, 1000);
         int pz = parseInt(etPause, 200);
 
-        for (int i = 0; i < 4; i++) {
-            isRunning[i] = true;
-            String cfg = "window.FINDER_CONFIG={id:" + i + ",prefix:'" + p + "',suffix:'" + s + "',digits:" + d + ",attempts:" + a + ",pause:" + pz + "};";
-            webs[i].evaluateJavascript(cfg, null);
-            webs[i].evaluateJavascript(finderJs, null);
-        }
-        statusText.setText("▶ بدء التخمين في 4 شاشات...");
-        appendLog("▶ بدء التخمين في 4 شاشات");
+        appendLog("▶ بدء التخمين المتناوب (لعدم تعليق الشبكة)");
         voucherResult.setVisibility(View.GONE);
+        statusText.setText("جاري التخمين...");
+
+        // تشغيل العمال بالتناوب (كل عامل يبدأ بعده 2500 ملي ثانية)
+        for (int i = 0; i < 4; i++) {
+            final int index = i;
+            uiHandler.postDelayed(() -> {
+                if (isRunning[index] || stoppedState) return; // لا تبدأ إذا تم الإيقاف
+                isRunning[index] = true;
+                String cfg = "window.FINDER_CONFIG={id:" + index + ",prefix:'" + p + "',suffix:'" + s + "',digits:" + d + ",attempts:" + a + ",pause:" + pz + "};";
+                webs[index].evaluateJavascript(cfg, null);
+                webs[index].evaluateJavascript(finderJs, null);
+                appendLog("[W" + index + "] ▶ بدأ العامل");
+            }, i * 2500); // 2.5 ثانية تأخير بين كل شاشة
+        }
     }
 
     private void stopAll() {
+        stoppedState = true;
         for (int i = 0; i < 4; i++) {
             isRunning[i] = false;
             webs[i].evaluateJavascript("window.stopFinder && window.stopFinder();", null);

