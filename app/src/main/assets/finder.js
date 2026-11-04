@@ -11,9 +11,6 @@
     async function run() {
         log('▶ بدء');
         
-        // تأخير مبدئي إضافي حسب رقم الشاشة لمنع التزامن
-        await new Promise(r => setTimeout(r, id * 500));
-
         const maxVal = Math.pow(10, CFG.digits) - 1;
         let done = 0;
 
@@ -31,6 +28,17 @@
             const num = Math.floor(Math.random() * (maxVal + 1));
             const v = CFG.prefix + String(num).padStart(CFG.digits, '0') + CFG.suffix;
 
+            // 🔒 انتظار الدور (القفل الزمني العام)
+            // الشاشة لن ترسل أي طلب حتى ينتهي وقت "التأخير" من آخر طلب في أي شاشة أخرى
+            log('⏳ في انتظار الدور...');
+            while (!stopped) {
+                let canGo = window["AndroidBridge" + id].requestTurn(CFG.pause || 1500);
+                if (canGo) break;
+                await new Promise(r => setTimeout(r, 100));
+            }
+            if (stopped) break;
+
+            // الآن جاء دور هذه الشاشة
             input.value = v;
             input.dispatchEvent(new Event('input', {bubbles:true}));
             input.dispatchEvent(new Event('change', {bubbles:true}));
@@ -63,11 +71,6 @@
             if (errDiv && errDiv.innerText.trim() !== "") {
                 log('📄 ' + errDiv.innerText.trim());
             }
-
-            // ✅ السر هنا: ننتظر وقتاً أطول + وقتاً إضافياً حسب رقم الشاشة
-            // هذا يضمن أن كل شاشة ترسل طلبها في وقت مختلف عن الأخرى
-            const dynamicPause = (CFG.pause || 200) + (id * 1000); 
-            await new Promise(r => setTimeout(r, dynamicPause));
         }
         log('❌ انتهى');
         window.__cracking = false;

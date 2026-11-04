@@ -23,6 +23,7 @@ public class MainActivity extends Activity {
     private Handler uiHandler = new Handler(Looper.getMainLooper());
     private boolean logUpdatePending = false;
     private boolean stoppedState = false;
+    private long lastAttemptTime = 0;
     private boolean[] isRunning = new boolean[]{false, false, false, false};
     private final String[] UAS = {
         "Mozilla/5.0 (Linux; Android 13; SM-S911B) AppleWebKit/537.36 Chrome/118.0 Mobile",
@@ -135,6 +136,7 @@ public class MainActivity extends Activity {
     }
 
     private void startAll() {
+        stoppedState = false; // إعادة تعيين الحالة
         prefs.edit().putString("prefix", etPrefix.getText().toString()).putString("suffix", etSuffix.getText().toString())
             .putString("digits", etDigits.getText().toString()).putString("attempts", etAttempts.getText().toString())
             .putString("pause", etPause.getText().toString()).putString("retry", etRetry.getText().toString())
@@ -196,6 +198,16 @@ public class MainActivity extends Activity {
         public Bridge(int id) { this.id = id; }
         @JavascriptInterface public void log(String m) { runOnUiThread(() -> appendLog("[W" + id + "] " + m)); }
         @JavascriptInterface public void progress(int c, int t, String v) { runOnUiThread(() -> statusText.setText("[W" + id + "] [" + c + "/" + t + "] " + v)); }
+        
+        @JavascriptInterface public synchronized boolean requestTurn(long minGapMs) {
+            long now = System.currentTimeMillis();
+            if (now - lastAttemptTime >= minGapMs) {
+                lastAttemptTime = now;
+                return true;
+            }
+            return false;
+        }
+
         @JavascriptInterface public void clearCookies() {
             runOnUiThread(() -> {
                 CookieManager.getInstance().removeAllCookies(null);
