@@ -25,6 +25,7 @@ public class MainActivity extends Activity {
     private boolean stoppedState = false;
     private long lastAttemptTime = 0;
     private boolean[] isRunning = new boolean[]{false, false, false, false};
+    private final Random rand = new Random();
     private final String[] UAS = {
         "Mozilla/5.0 (Linux; Android 13; SM-S911B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Mobile Safari/537.36",
         "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Mobile Safari/537.36",
@@ -108,9 +109,10 @@ public class MainActivity extends Activity {
             targetUrl = urlBar.getText().toString().trim();
             if (!targetUrl.startsWith("http")) targetUrl = "http://" + targetUrl;
             prefs.edit().putString("url", targetUrl).apply();
-            for (int i = 0; i < 4; i++) Random rand = new Random();
-            webs[i].getSettings().setUserAgentString(UAS[rand.nextInt(UAS.length)]);
-            webs[i].loadUrl(targetUrl);
+            for (int i = 0; i < 4; i++) {
+                webs[i].getSettings().setUserAgentString(UAS[rand.nextInt(UAS.length)]);
+                webs[i].loadUrl(targetUrl);
+            }
             appendLog("تم تحميل الرابط في 4 شاشات");
         });
 
@@ -136,9 +138,10 @@ public class MainActivity extends Activity {
         });
 
         targetUrl = urlBar.getText().toString();
-        for (int i = 0; i < 4; i++) Random rand = new Random();
-            webs[i].getSettings().setUserAgentString(UAS[rand.nextInt(UAS.length)]);
-            webs[i].loadUrl(targetUrl);
+        for (int i = 0; i < 4; i++) {
+                webs[i].getSettings().setUserAgentString(UAS[rand.nextInt(UAS.length)]);
+                webs[i].loadUrl(targetUrl);
+            }
     }
 
     private void startAll() {
